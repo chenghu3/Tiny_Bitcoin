@@ -36,8 +36,8 @@ async def handle_connection(reader, writer):
         try:
             connections.append(node_line)
 
-            command_task = asyncio.create_task(reader.readline())
-            event_task = asyncio.create_task(snap_event.wait())
+            command_task = asyncio.ensure_future(reader.readline())
+            event_task = asyncio.ensure_future(snap_event.wait())
 
             while True:
 
@@ -61,7 +61,7 @@ async def handle_connection(reader, writer):
                             print(f"Unexpected command `{command.decode().strip()}' from {addr}, disconnecting")
                             break
                         # left here to remember when we start supporting commands
-                        command_task = asyncio.create_task(reader.readline())
+                        command_task = asyncio.ensure_future(reader.readline())
                     if event_task in ready:
                         if node_line in kill_connections:
                             kill_connections.remove(node_line)
@@ -69,7 +69,7 @@ async def handle_connection(reader, writer):
                             writer.write(b"DIE\n")
                             await writer.drain()
                             break
-                        event_task = asyncio.create_task(snap_event.wait())
+                        event_task = asyncio.ensure_future(snap_event.wait())
 
         except ConnectionError:
             print(f"Error in connection with {addr}")
@@ -92,7 +92,7 @@ def handle_command():
 
 
 loop = asyncio.get_event_loop()
-coro = asyncio.start_server(handle_connection, None, 8888, loop=loop)
+coro = asyncio.start_server(handle_connection, None, port, loop=loop)
 server = loop.run_until_complete(coro)
 
 # Serve requests until Ctrl+C is pressed
