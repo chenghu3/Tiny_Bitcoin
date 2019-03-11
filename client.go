@@ -33,14 +33,14 @@ func main() {
 	if err != nil {
 		fmt.Println("Error dialing:", err.Error())
 	} else {
-		fmt.Fprintf(conn, "CONNECT "+name+" 172.22.158.32 "+gossipPort+"\n")
+		fmt.Fprintf(conn, "CONNECT "+name+" "+localIP+" "+gossipPort+"\n")
 	}
 
 	// Start gossip protocol server
 	go startGossipServer(gossipPort)
 
 	// Receive message from Introduction Service
-	handleTCPConnection(conn)
+	handleServiceTCPConnection(conn)
 }
 
 // Reference https://stackoverflow.com/questions/23558425/how-do-i-get-the-local-ip-address-in-go
@@ -78,7 +78,7 @@ func startGossipServer(port string) {
 	}
 }
 
-func handleTCPConnection(conn net.Conn) {
+func handleServiceTCPConnection(conn net.Conn) {
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
@@ -93,9 +93,32 @@ func handleTCPConnection(conn net.Conn) {
 		fmt.Printf(rawMsg)
 
 		// TODO: Add a parse message function
-		if strings.Contains(rawMsg, "DIE") || strings.Contains(rawMsg, "QUIT") {
+		if strings.HasPrefix(rawMsg, "INTRODUCE") {
+			// Handle INTRODUCE
+		} else if strings.HasPrefix(rawMsg, "TRANSACTION") {
+			// Handle TRANSACTION
+		} else if strings.HasPrefix(rawMsg, "DIE") || strings.HasPrefix(rawMsg, "QUIT") {
+			break
+		} else {
+			fmt.Println("Unknown message format.")
+		}
+
+	}
+}
+
+func handleTCPConnection(conn net.Conn) {
+	defer conn.Close()
+
+	reader := bufio.NewReader(conn)
+
+	for {
+		rawMsg, err := reader.ReadString('\n')
+		if err == io.EOF {
+			fmt.Println("Server offline")
 			break
 		}
+
+		fmt.Printf(rawMsg)
 
 	}
 }
