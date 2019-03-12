@@ -17,16 +17,17 @@ snap_event = asyncio.Event()
 
 
 async def handle_connection(reader, writer):
-    connect_line = await reader.readline()
     addr = writer.get_extra_info('peername')
     print(f"Received connection from {addr}")
 
+    connect_line = await reader.readline()
     m = re.match(r'CONNECT\s+(.*)$', connect_line.decode(), re.I)
     if not m:
         print(f"Incorrect connect line format from {addr}: `{connect_line.strip()}'")
         writer.close()
     else:
         node_line = m.group(1)
+        print(f"New node: {node_line}")
         num_intros = min(len(connections), 3)
         intros = random.sample(connections, num_intros)
         for intro in intros:
@@ -73,6 +74,7 @@ async def handle_connection(reader, writer):
 
         except ConnectionError:
             print(f"Error in connection with {addr}")
+            event_task.cancel()
         finally:
             writer.close()
             connections.remove(node_line)
