@@ -4,10 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
+	"math"
+	"math/rand"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"./src/shared"
@@ -21,6 +25,7 @@ type Node struct {
 	Members      []string
 	Transactions []string
 	MembersSet   *shared.StringSet
+	RWlock       sync.RWMutex
 }
 
 // NewNode : construntor for Node struct
@@ -31,24 +36,6 @@ func NewNode(port string) *Node {
 	node.Transactions = make([]string, 0)
 	node.MembersSet = shared.NewSet()
 	return node
-}
-
-// Reference https://stackoverflow.com/questions/23558425/how-do-i-get-the-local-ip-address-in-go
-// getLocalIP returns the non loopback local IP of the host
-func getLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return ""
-	}
-	for _, address := range addrs {
-		// check the address type and if it is not a loopback the display it
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
-			}
-		}
-	}
-	return ""
 }
 
 // handleServiceTCPConnection: handle messge revieved from introduction service
@@ -81,7 +68,7 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 			// Handle TRANSACTION
 			node.Transactions = append(node.Transactions, rawMsg)
 		} else if strings.HasPrefix(rawMsg, "DIE") || strings.HasPrefix(rawMsg, "QUIT") {
-			break
+			os.Exit(1)
 		} else {
 			fmt.Println("Unknown message format.")
 		}
@@ -131,9 +118,41 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 	}
 }
 
+// sendGossipingMessge: header: "JOIN, TRANSACTION, DEAD", round, message.
+// !! add newline in the mesg passed in
+func sendGossipingMessge(node *Node, header string, round int, mesg string) {
+	gossipMesg := ""
+	for {
+		node.RWlock.RLock()
+		NumMembers := len(node.Members)
+		node.RWlock.RUnlock()
+		maxRound := int(2 * math.Log(float64(NumMembers)))
+		if round > maxRound {
+			break
+		}
+		gossipMesg = header + "," + strconv.Itoa(round) + "," + mesg
+		for i := 0; i < 2; i++ {
+			// seed in main
+			targetPeer := strings.Split(node.Members[rand.Intn(NumMembers)], " ")
+			ip := targetPeer[0]
+			port := targetPeer[1]
+			conn, err := net.Dial("tcp", ip+":"+port)
+			// send gossipMesg to peer
+			if err != nil {
+				log.Fatal(err)
+			} else {
+				fmt.Fprintf(conn, gossipMesg)
+			}
+			conn.Close()
+		}
+		round++
+	}
+}
+
 // Notify existing nodes known from INTRODUCE message this node has join the P2P network.
 func joinP2P(node *Node, addr string, port string) {
 	conn, err := net.Dial("tcp", addr+":"+port)
+	defer conn.Close()
 	// send hello to peer
 	if err != nil {
 		fmt.Println("Error dialing:", err.Error())
@@ -154,6 +173,8 @@ func joinP2P(node *Node, addr string, port string) {
 }
 
 func updateMembershiplist(node *Node, membershiplist string) {
+	node.RWlock.Lock()
+	defer node.RWlock.Unlock()
 	m := strings.Split(membershiplist, "\n")[0]
 	members := strings.Split(m, ",")
 	for _, member := range members {
@@ -167,7 +188,7 @@ func updateMembershiplist(node *Node, membershiplist string) {
 // TODO: change introduction server to known server
 func connectToIntroduction(node *Node, gossipPort string) (conn net.Conn) {
 	// Get local IP address
-	localIP := getLocalIP()
+	localIP := shared.GetLocalIP()
 	if localIP == "" {
 		fmt.Println("Error: cannot find local IP.")
 		return
@@ -191,6 +212,7 @@ func main() {
 		os.Exit(1)
 	}
 	gossipPort := args[1]
+	rand.Seed(time.Now().UnixNano())
 
 	node := NewNode(gossipPort)
 

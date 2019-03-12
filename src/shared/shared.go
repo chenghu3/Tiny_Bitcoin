@@ -2,6 +2,7 @@ package shared
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +36,18 @@ func (set *StringSet) SetAdd(s string) bool {
 	set.set[s] = true
 	set.mux.Unlock()
 	return !found //False if it existed already
+}
+
+// SetDelete : Delete method for StringSet
+func (set *StringSet) SetDelete(s string) bool {
+	_, found := set.set[s]
+	if !found {
+		return false // not such element
+	}
+	set.mux.Lock()
+	delete(set.set, s)
+	set.mux.Unlock()
+	return true
 }
 
 // SetHas : Check whether String is in StringSet
@@ -75,4 +88,22 @@ func GetNumberFromServerAddress(serverAddress string) int {
 	ss := strings.Split(s, ".")[0]
 	num, _ := strconv.Atoi(ss[0:])
 	return num
+}
+
+// GetLocalIP returns the non loopback local IP of the host
+// Reference https://stackoverflow.com/questions/23558425/how-do-i-get-the-local-ip-address-in-go
+func GetLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, address := range addrs {
+		// check the address type and if it is not a loopback the display it
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
 }
