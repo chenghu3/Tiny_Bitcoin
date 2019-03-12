@@ -6,12 +6,13 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+
+	"./src/shared"
 )
 
-const serverAddr = "172.22.158.32"
-const serverPort = "8888"
 const pingTimeout time.Duration = 1500 * time.Millisecond
 
 // Node defination
@@ -19,6 +20,7 @@ type Node struct {
 	Port         string
 	Members      []string
 	Transactions []string
+	MembersSet   *shared.StringSet
 }
 
 // NewNode : construntor for Node struct
@@ -27,6 +29,7 @@ func NewNode(port string) *Node {
 	node.Port = port
 	node.Members = make([]string, 0)
 	node.Transactions = make([]string, 0)
+	node.MembersSet = shared.NewSet()
 	return node
 }
 
@@ -48,6 +51,7 @@ func getLocalIP() string {
 	return ""
 }
 
+// handleServiceTCPConnection: handle messge revieved from introduction service
 func handleServiceTCPConnection(node *Node, conn net.Conn) {
 	defer conn.Close()
 
@@ -72,7 +76,7 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 			addr := arr[1]
 			port := arr[2]
 			port = port[:len(port)-1]
-			go join(node, addr, port)
+			go joinP2P(node, addr, port)
 		} else if strings.HasPrefix(rawMsg, "TRANSACTION") {
 			// Handle TRANSACTION
 			node.Transactions = append(node.Transactions, rawMsg)
@@ -85,6 +89,7 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 	}
 }
 
+// startGossipServer: set tcp gossip server
 func startGossipServer(node *Node, port string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -102,6 +107,7 @@ func startGossipServer(node *Node, port string) {
 	}
 }
 
+// handleGossipTCPConnection: handle messge revieved from other peers
 func handleGossipTCPConnection(node *Node, conn net.Conn) {
 	defer conn.Close()
 
@@ -125,24 +131,57 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 	}
 }
 
-func join(node *Node, addr string, port string) {
+// Notify existing nodes known from INTRODUCE message this node has join the P2P network.
+func joinP2P(node *Node, addr string, port string) {
 	conn, err := net.Dial("tcp", addr+":"+port)
+	// send hello to peer
 	if err != nil {
 		fmt.Println("Error dialing:", err.Error())
 	} else {
 		fmt.Fprintf(conn, "HELLO "+node.Port+"\n")
 	}
+	// receive membershiplist back
 	reader := bufio.NewReader(conn)
-	rawMsg, err := reader.ReadString('\n')
+	membershiplist, err := reader.ReadString('\n')
 	if err == io.EOF {
-		fmt.Println("Node offline")
+		hostname, _ := net.LookupAddr(addr)
+		remotehost := hostname[0]
+		machineID := shared.GetNumberFromServerAddress(remotehost)
+		fmt.Println("Peer from VM" + strconv.Itoa(machineID) + " in port" + port + " went offline.")
 		return
 	}
-	fmt.Printf(rawMsg)
-	m := strings.Split(rawMsg, "\n")[0]
+	updateMembershiplist(node, membershiplist)
+}
+
+func updateMembershiplist(node *Node, membershiplist string) {
+	m := strings.Split(membershiplist, "\n")[0]
 	members := strings.Split(m, ",")
-	node.Members = members
-	fmt.Println(node.Members)
+	for _, member := range members {
+		if !node.MembersSet.SetHas(member) {
+			node.MembersSet.SetAdd(member)
+		}
+	}
+	node.Members = node.MembersSet.SetToArray()
+}
+
+// TODO: change introduction server to known server
+func connectToIntroduction(node *Node, gossipPort string) (conn net.Conn) {
+	// Get local IP address
+	localIP := getLocalIP()
+	if localIP == "" {
+		fmt.Println("Error: cannot find local IP.")
+		return
+	}
+	node.Members = append(node.Members, localIP+" "+gossipPort)
+	// Connect to Introduction Service
+	serverAddr, _ := os.Hostname()
+	conn, err := net.Dial("tcp", serverAddr+":8888")
+	if err != nil {
+		fmt.Println("Error dialing:", err.Error())
+	} else {
+		fmt.Fprintf(conn, "CONNECT "+localIP+" "+gossipPort+"\n")
+	}
+	return
 }
 
 func main() {
@@ -155,26 +194,12 @@ func main() {
 
 	node := NewNode(gossipPort)
 
-	// Get local IP address
-	localIP := getLocalIP()
-	if localIP == "" {
-		fmt.Println("Error: cannot find local IP.")
-		return
-	}
-
-	node.Members = append(node.Members, localIP+" "+gossipPort)
-
 	// Connect to Introduction Service
-	conn, err := net.Dial("tcp", serverAddr+":"+serverPort)
-	if err != nil {
-		fmt.Println("Error dialing:", err.Error())
-	} else {
-		fmt.Fprintf(conn, "CONNECT "+localIP+" "+gossipPort+"\n")
-	}
+	introdutionConn := connectToIntroduction(node, gossipPort)
 
 	// Start gossip protocol server
 	go startGossipServer(node, gossipPort)
 
 	// Receive message from Introduction Service
-	handleServiceTCPConnection(node, conn)
+	handleServiceTCPConnection(node, introdutionConn)
 }
