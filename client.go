@@ -16,13 +16,15 @@ const pingTimeout time.Duration = 1500 * time.Millisecond
 
 // Node defination
 type Node struct {
+	Port         string
 	Members      []string
 	Transactions []string
 }
 
 // NewNode : construntor for Node struct
-func NewNode() *Node {
+func NewNode(port string) *Node {
 	node := new(Node)
+	node.Port = port
 	node.Members = make([]string, 0)
 	node.Transactions = make([]string, 0)
 	return node
@@ -46,23 +48,6 @@ func getLocalIP() string {
 	return ""
 }
 
-func startGossipServer(port string) {
-	ln, err := net.Listen("tcp", ":"+port)
-	if err != nil {
-		fmt.Println("Error listening:", err.Error())
-		os.Exit(1)
-	}
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			fmt.Println("Error accepting: ", err.Error())
-			os.Exit(1)
-		}
-		go handleGossipTCPConnection(conn)
-		defer conn.Close()
-	}
-}
-
 func handleServiceTCPConnection(node *Node, conn net.Conn) {
 	defer conn.Close()
 
@@ -83,9 +68,14 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 			node.Members = append(node.Members, rawMsg[idx:len(rawMsg)-1])
 			fmt.Println("Current Members:", node.Members)
 			// self introduction
-
+			arr := strings.Split(rawMsg, " ")
+			addr := arr[1]
+			port := arr[2]
+			port = port[:len(port)-1]
+			go join(node, addr, port)
 		} else if strings.HasPrefix(rawMsg, "TRANSACTION") {
 			// Handle TRANSACTION
+			node.Transactions = append(node.Transactions, rawMsg)
 		} else if strings.HasPrefix(rawMsg, "DIE") || strings.HasPrefix(rawMsg, "QUIT") {
 			break
 		} else {
@@ -95,8 +85,27 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 	}
 }
 
-func handleGossipTCPConnection(conn net.Conn) {
+func startGossipServer(node *Node, port string) {
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		fmt.Println("Error listening:", err.Error())
+		os.Exit(1)
+	}
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			fmt.Println("Error accepting: ", err.Error())
+			os.Exit(1)
+		}
+		go handleGossipTCPConnection(node, conn)
+		defer conn.Close()
+	}
+}
+
+func handleGossipTCPConnection(node *Node, conn net.Conn) {
 	defer conn.Close()
+
+	addr := strings.Split(conn.RemoteAddr().String(), ":")[0]
 
 	reader := bufio.NewReader(conn)
 
@@ -108,19 +117,43 @@ func handleGossipTCPConnection(conn net.Conn) {
 		}
 
 		fmt.Printf(rawMsg)
+		if strings.HasPrefix(rawMsg, "HELLO") {
+			node.Members = append(node.Members, addr+" "+strings.Split(rawMsg, " ")[1])
+			memberString := strings.Join(node.Members, ",") + "\n"
+			fmt.Fprintf(conn, memberString)
+		}
 	}
+}
+
+func join(node *Node, addr string, port string) {
+	conn, err := net.Dial("tcp", addr+":"+port)
+	if err != nil {
+		fmt.Println("Error dialing:", err.Error())
+	} else {
+		fmt.Fprintf(conn, "HELLO "+node.Port+"\n")
+	}
+	reader := bufio.NewReader(conn)
+	rawMsg, err := reader.ReadString('\n')
+	if err == io.EOF {
+		fmt.Println("Node offline")
+		return
+	}
+	fmt.Printf(rawMsg)
+	m := strings.Split(rawMsg, "\n")[0]
+	members := strings.Split(m, ",")
+	node.Members = members
+	fmt.Println(node.Members)
 }
 
 func main() {
 	args := os.Args
-	if len(args) != 3 {
-		fmt.Println("Usage:", args[0], "name port")
+	if len(args) != 2 {
+		fmt.Println("Usage:", args[0], "port")
 		os.Exit(1)
 	}
-	name := args[1]
-	gossipPort := args[2]
+	gossipPort := args[1]
 
-	node := NewNode()
+	node := NewNode(gossipPort)
 
 	// Get local IP address
 	localIP := getLocalIP()
@@ -129,18 +162,18 @@ func main() {
 		return
 	}
 
-	node.Members = append(node.Members, name+" "+localIP+" "+gossipPort)
+	node.Members = append(node.Members, localIP+" "+gossipPort)
 
 	// Connect to Introduction Service
 	conn, err := net.Dial("tcp", serverAddr+":"+serverPort)
 	if err != nil {
 		fmt.Println("Error dialing:", err.Error())
 	} else {
-		fmt.Fprintf(conn, "CONNECT "+name+" "+localIP+" "+gossipPort+"\n")
+		fmt.Fprintf(conn, "CONNECT "+localIP+" "+gossipPort+"\n")
 	}
 
 	// Start gossip protocol server
-	go startGossipServer(gossipPort)
+	go startGossipServer(node, gossipPort)
 
 	// Receive message from Introduction Service
 	handleServiceTCPConnection(node, conn)
