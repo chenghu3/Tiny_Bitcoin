@@ -7,40 +7,25 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 )
 
 const serverAddr = "172.22.158.32"
 const serverPort = "8888"
+const pingTimeout time.Duration = 1500 * time.Millisecond
 
-func main() {
-	args := os.Args
-	if len(args) != 3 {
-		fmt.Println("Usage:", args[0], "name port")
-		os.Exit(1)
-	}
-	name := args[1]
-	gossipPort := args[2]
+// Node defination
+type Node struct {
+	Members      []string
+	Transactions []string
+}
 
-	// Get local IP address
-	localIP := getLocalIP()
-	if localIP == "" {
-		fmt.Println("Error: cannot find local IP.")
-		return
-	}
-
-	// Connect to Introduction Service
-	conn, err := net.Dial("tcp", serverAddr+":"+serverPort)
-	if err != nil {
-		fmt.Println("Error dialing:", err.Error())
-	} else {
-		fmt.Fprintf(conn, "CONNECT "+name+" "+localIP+" "+gossipPort+"\n")
-	}
-
-	// Start gossip protocol server
-	go startGossipServer(gossipPort)
-
-	// Receive message from Introduction Service
-	handleServiceTCPConnection(conn)
+// NewNode : construntor for Node struct
+func NewNode() *Node {
+	node := new(Node)
+	node.Members = make([]string, 0)
+	node.Transactions = make([]string, 0)
+	return node
 }
 
 // Reference https://stackoverflow.com/questions/23558425/how-do-i-get-the-local-ip-address-in-go
@@ -73,12 +58,12 @@ func startGossipServer(port string) {
 			fmt.Println("Error accepting: ", err.Error())
 			os.Exit(1)
 		}
-		go handleTCPConnection(conn)
+		go handleGossipTCPConnection(conn)
 		defer conn.Close()
 	}
 }
 
-func handleServiceTCPConnection(conn net.Conn) {
+func handleServiceTCPConnection(node *Node, conn net.Conn) {
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
@@ -94,7 +79,11 @@ func handleServiceTCPConnection(conn net.Conn) {
 
 		// TODO: Add a parse message function
 		if strings.HasPrefix(rawMsg, "INTRODUCE") {
-			// Handle INTRODUCE
+			idx := strings.Index(rawMsg, " ") + 1
+			node.Members = append(node.Members, rawMsg[idx:len(rawMsg)-1])
+			fmt.Println("Current Members:", node.Members)
+			// self introduction
+
 		} else if strings.HasPrefix(rawMsg, "TRANSACTION") {
 			// Handle TRANSACTION
 		} else if strings.HasPrefix(rawMsg, "DIE") || strings.HasPrefix(rawMsg, "QUIT") {
@@ -106,7 +95,7 @@ func handleServiceTCPConnection(conn net.Conn) {
 	}
 }
 
-func handleTCPConnection(conn net.Conn) {
+func handleGossipTCPConnection(conn net.Conn) {
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
@@ -119,6 +108,40 @@ func handleTCPConnection(conn net.Conn) {
 		}
 
 		fmt.Printf(rawMsg)
-
 	}
+}
+
+func main() {
+	args := os.Args
+	if len(args) != 3 {
+		fmt.Println("Usage:", args[0], "name port")
+		os.Exit(1)
+	}
+	name := args[1]
+	gossipPort := args[2]
+
+	node := NewNode()
+
+	// Get local IP address
+	localIP := getLocalIP()
+	if localIP == "" {
+		fmt.Println("Error: cannot find local IP.")
+		return
+	}
+
+	node.Members = append(node.Members, name+" "+localIP+" "+gossipPort)
+
+	// Connect to Introduction Service
+	conn, err := net.Dial("tcp", serverAddr+":"+serverPort)
+	if err != nil {
+		fmt.Println("Error dialing:", err.Error())
+	} else {
+		fmt.Fprintf(conn, "CONNECT "+name+" "+localIP+" "+gossipPort+"\n")
+	}
+
+	// Start gossip protocol server
+	go startGossipServer(gossipPort)
+
+	// Receive message from Introduction Service
+	handleServiceTCPConnection(node, conn)
 }
