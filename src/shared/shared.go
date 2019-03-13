@@ -2,6 +2,7 @@ package shared
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
 	"strconv"
 	"strings"
@@ -60,11 +61,28 @@ func (set *StringSet) SetHas(s string) bool {
 
 // SetToArray : Set to array
 func (set *StringSet) SetToArray() []string {
-	keys := make([]string, len(set.set))
+	keys := make([]string, 0)
 	for k := range set.set {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// Size : size
+func (set *StringSet) Size() int {
+	return len(set.set)
+}
+
+// GetRandom : Get a random element from set
+func (set *StringSet) GetRandom() string {
+	i := rand.Intn(len(set.set))
+	for k := range set.set {
+		if i == 0 {
+			return k
+		}
+		i--
+	}
+	panic("never!!")
 }
 
 // **************************************** //
@@ -106,4 +124,9 @@ func GetLocalIP() string {
 		}
 	}
 	return ""
+}
+
+func ParseMessage(msg string) (string, string, string) {
+	params := strings.Split(msg, " ")
+	return params[0], params[1], params[2]
 }

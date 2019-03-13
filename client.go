@@ -17,13 +17,13 @@ import (
 	"./src/shared"
 )
 
-const pingTimeout time.Duration = 1500 * time.Millisecond
+const gossipInterval time.Duration = 500 * time.Millisecond
 
 // Node defination
 type Node struct {
 	Port         string
 	Members      []string
-	Transactions []string
+	Transactions *shared.StringSet
 	MembersSet   *shared.StringSet
 	RWlock       sync.RWMutex
 }
@@ -33,7 +33,7 @@ func NewNode(port string) *Node {
 	node := new(Node)
 	node.Port = port
 	node.Members = make([]string, 0)
-	node.Transactions = make([]string, 0)
+	node.Transactions = shared.NewSet()
 	node.MembersSet = shared.NewSet()
 	return node
 }
@@ -46,27 +46,26 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 
 	for {
 		rawMsg, err := reader.ReadString('\n')
+		rawMsg = strings.Trim(rawMsg, "\n")
+
 		if err == io.EOF {
 			fmt.Println("Server offline")
 			break
 		}
 
-		fmt.Printf(rawMsg)
+		fmt.Printf("SERVICE:" + rawMsg)
 
 		// TODO: Add a parse message function
 		if strings.HasPrefix(rawMsg, "INTRODUCE") {
-			idx := strings.Index(rawMsg, " ") + 1
-			node.Members = append(node.Members, rawMsg[idx:len(rawMsg)-1])
-			fmt.Println("Current Members:", node.Members)
 			// self introduction
 			arr := strings.Split(rawMsg, " ")
 			addr := arr[1]
 			port := arr[2]
-			port = port[:len(port)-1]
 			go joinP2P(node, addr, port)
 		} else if strings.HasPrefix(rawMsg, "TRANSACTION") {
 			// Handle TRANSACTION
-			node.Transactions = append(node.Transactions, rawMsg)
+			node.Transactions.SetAdd(rawMsg)
+			go sendGossipingMessge(node, "TRANSACTION", 0, rawMsg)
 		} else if strings.HasPrefix(rawMsg, "DIE") || strings.HasPrefix(rawMsg, "QUIT") {
 			os.Exit(1)
 		} else {
@@ -85,6 +84,7 @@ func startGossipServer(node *Node, port string) {
 	}
 	for {
 		conn, err := ln.Accept()
+		fmt.Println(conn.RemoteAddr().String())
 		if err != nil {
 			fmt.Println("Error accepting: ", err.Error())
 			os.Exit(1)
@@ -102,18 +102,31 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 
 	reader := bufio.NewReader(conn)
 
-	for {
-		rawMsg, err := reader.ReadString('\n')
-		if err == io.EOF {
-			fmt.Println("Server offline")
-			break
-		}
+	gossipRawMsg, err := reader.ReadString('\n')
+	gossipRawMsg = strings.Trim(gossipRawMsg, "\n")
+	if err == io.EOF {
+		fmt.Println("Node offline")
+		// return
+	}
 
-		fmt.Printf(rawMsg)
-		if strings.HasPrefix(rawMsg, "HELLO") {
-			node.Members = append(node.Members, addr+" "+strings.Split(rawMsg, " ")[1])
-			memberString := strings.Join(node.Members, ",") + "\n"
-			fmt.Fprintf(conn, memberString)
+	// fmt.Printf(gossipRawMsg)
+	if strings.HasPrefix(gossipRawMsg, "HELLO") {
+		// node.Members = append(node.Members, addr+" "+strings.Split(gossipRawMsg, " ")[1])
+		node.MembersSet.SetAdd(addr + " " + strings.Split(gossipRawMsg, " ")[1])
+		memberString := strings.Join(node.MembersSet.SetToArray(), ",") + "\n"
+		fmt.Fprintf(conn, memberString)
+		// send JOIN msg
+	} else if strings.HasPrefix(gossipRawMsg, "TRANSACTION") {
+		params := strings.Split(gossipRawMsg, ",")
+		round, _ := strconv.Atoi(params[1])
+		rawMsg := params[2]
+		fmt.Println("Gossip:" + rawMsg)
+		if node.Transactions.SetAdd(rawMsg) {
+			// First time infected
+			go sendGossipingMessge(node, "TRANSACTION", round+1, rawMsg)
+			fmt.Println("Transaction Updated:" + rawMsg)
+			fmt.Print("Updated Trans List")
+			fmt.Println(node.Transactions.SetToArray())
 		}
 	}
 }
@@ -124,16 +137,18 @@ func sendGossipingMessge(node *Node, header string, round int, mesg string) {
 	gossipMesg := ""
 	for {
 		node.RWlock.RLock()
-		NumMembers := len(node.Members)
+		NumMembers := node.MembersSet.Size()
 		node.RWlock.RUnlock()
 		maxRound := int(2 * math.Log(float64(NumMembers)))
 		if round > maxRound {
 			break
 		}
 		gossipMesg = header + "," + strconv.Itoa(round) + "," + mesg
+		// fmt.Println(node.MembersSet.Size())
+		// fmt.Println(node.MembersSet.SetToArray())
 		for i := 0; i < 2; i++ {
 			// seed in main
-			targetPeer := strings.Split(node.Members[rand.Intn(NumMembers)], " ")
+			targetPeer := strings.Split(node.MembersSet.GetRandom(), " ")
 			ip := targetPeer[0]
 			port := targetPeer[1]
 			conn, err := net.Dial("tcp", ip+":"+port)
@@ -146,6 +161,7 @@ func sendGossipingMessge(node *Node, header string, round int, mesg string) {
 			conn.Close()
 		}
 		round++
+		time.Sleep(gossipInterval)
 	}
 }
 
@@ -175,14 +191,14 @@ func joinP2P(node *Node, addr string, port string) {
 func updateMembershiplist(node *Node, membershiplist string) {
 	node.RWlock.Lock()
 	defer node.RWlock.Unlock()
-	m := strings.Split(membershiplist, "\n")[0]
+	m := strings.Trim(membershiplist, "\n")
 	members := strings.Split(m, ",")
 	for _, member := range members {
 		if !node.MembersSet.SetHas(member) {
 			node.MembersSet.SetAdd(member)
 		}
 	}
-	node.Members = node.MembersSet.SetToArray()
+	// node.Members = node.MembersSet.SetToArray()
 }
 
 // TODO: change introduction server to known server
@@ -193,7 +209,8 @@ func connectToIntroduction(node *Node, gossipPort string) (conn net.Conn) {
 		fmt.Println("Error: cannot find local IP.")
 		return
 	}
-	node.Members = append(node.Members, localIP+" "+gossipPort)
+	// node.Members = append(node.Members, localIP+" "+gossipPort)
+	node.MembersSet.SetAdd(localIP + " " + gossipPort)
 	// Connect to Introduction Service
 	serverAddr, _ := os.Hostname()
 	conn, err := net.Dial("tcp", serverAddr+":8888")
