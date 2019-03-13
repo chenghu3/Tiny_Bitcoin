@@ -106,26 +106,42 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 	// fmt.Printf(gossipRawMsg)
 	if strings.HasPrefix(gossipRawMsg, "HELLO") {
 		// node.Members = append(node.Members, addr+" "+strings.Split(gossipRawMsg, " ")[1])
-		node.MembersSet.SetAdd(addr + " " + strings.Split(gossipRawMsg, " ")[1])
+		addrPort := addr + " " + strings.Split(gossipRawMsg, " ")[1]
+		node.MembersSet.SetAdd(addrPort)
 		memberString := strings.Join(node.MembersSet.SetToArray(), ",") + "\n"
 		fmt.Fprintf(conn, memberString)
 		// send JOIN msg
+		go sendGossipingMessge(node, "JOIN", 0, addrPort)
+	} else if strings.HasPrefix(gossipRawMsg, "JOIN") {
+		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
+		if node.MembersSet.SetAdd(rawMsg) {
+			go sendGossipingMessge(node, "JOIN", round+1, rawMsg)
+			fmt.Println("New User:" + rawMsg)
+			fmt.Print("Updated Membership List")
+			fmt.Println(node.MembersSet.SetToArray())
+		}
 	} else if strings.HasPrefix(gossipRawMsg, "TRANSACTION") {
-		params := strings.Split(gossipRawMsg, ",")
-		round, _ := strconv.Atoi(params[1])
-		rawMsg := params[2]
+		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
 		if node.Transactions.SetAdd(rawMsg) {
 			// First time infected
 			go sendGossipingMessge(node, "TRANSACTION", round+1, rawMsg)
 		}
 	} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
-		params := strings.Split(gossipRawMsg, ",")
-		round, _ := strconv.Atoi(params[1])
-		rawMsg := params[2]
+		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
 		if node.MembersSet.SetDelete(rawMsg) {
 			go sendGossipingMessge(node, "DEAD", round+1, rawMsg)
 		}
+	} else {
+		fmt.Println("Unknown gossip message format.")
 	}
+}
+
+// ParseGossipingMessage : Parse a gossip message, return the current round and the message body
+func ParseGossipingMessage(gossipRawMsg string) (int, string) {
+	params := strings.Split(gossipRawMsg, ",")
+	round, _ := strconv.Atoi(params[1])
+	rawMsg := params[2]
+	return round, rawMsg
 }
 
 // sendGossipingMessge: header: "JOIN, TRANSACTION, DEAD", round, message.
