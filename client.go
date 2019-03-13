@@ -114,13 +114,16 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 		params := strings.Split(gossipRawMsg, ",")
 		round, _ := strconv.Atoi(params[1])
 		rawMsg := params[2]
-		fmt.Println("Gossip:" + rawMsg)
 		if node.Transactions.SetAdd(rawMsg) {
 			// First time infected
 			go sendGossipingMessge(node, "TRANSACTION", round+1, rawMsg)
-			fmt.Println("Transaction Updated:" + rawMsg)
-			fmt.Print("Updated Trans List")
-			fmt.Println(node.Transactions.SetToArray())
+		}
+	} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
+		params := strings.Split(gossipRawMsg, ",")
+		round, _ := strconv.Atoi(params[1])
+		rawMsg := params[2]
+		if node.MembersSet.SetDelete(rawMsg) {
+			go sendGossipingMessge(node, "DEAD", round+1, rawMsg)
 		}
 	}
 }
@@ -136,17 +139,21 @@ func sendGossipingMessge(node *Node, header string, round int, mesg string) {
 			break
 		}
 		gossipMesg = header + "," + strconv.Itoa(round) + "," + mesg
-		// fmt.Println(node.MembersSet.Size())
-		// fmt.Println(node.MembersSet.SetToArray())
 		for i := 0; i < 2; i++ {
 			// seed in main
-			targetPeer := strings.Split(node.MembersSet.GetRandom(), " ")
+			target := node.MembersSet.GetRandom()
+			targetPeer := strings.Split(target, " ")
 			ip := targetPeer[0]
 			port := targetPeer[1]
 			conn, err := net.Dial("tcp", ip+":"+port)
 			// send gossipMesg to peer
 			if err != nil {
-				log.Fatal(err)
+				// failure detected!
+				if strings.HasSuffix(err.Error(), "connect: connection refused") {
+					handleDailFail(node, target)
+				} else {
+					log.Fatal(err)
+				}
 			} else {
 				fmt.Fprintf(conn, gossipMesg)
 			}
@@ -155,6 +162,11 @@ func sendGossipingMessge(node *Node, header string, round int, mesg string) {
 		round++
 		time.Sleep(gossipInterval)
 	}
+}
+
+func handleDailFail(node *Node, peer string) {
+	node.MembersSet.SetDelete(peer)
+	go sendGossipingMessge(node, "DEAD", 0, peer)
 }
 
 // Notify existing nodes known from INTRODUCE message this node has join the P2P network.
