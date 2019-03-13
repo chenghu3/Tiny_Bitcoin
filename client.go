@@ -51,7 +51,7 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 			break
 		}
 
-		fmt.Printf("SERVICE:" + rawMsg)
+		fmt.Println("SERVICE:" + rawMsg)
 
 		// TODO: Add a parse message function
 		if strings.HasPrefix(rawMsg, "INTRODUCE") {
@@ -63,7 +63,8 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 		} else if strings.HasPrefix(rawMsg, "TRANSACTION") {
 			// Handle TRANSACTION
 			node.Transactions.SetAdd(rawMsg)
-			go sendGossipingMessge(node, "TRANSACTION", 0, rawMsg)
+			logWithTimestamp(rawMsg)
+			go sendGossipingMsg(node, "TRANSACTION", 0, rawMsg)
 		} else if strings.HasPrefix(rawMsg, "DIE") || strings.HasPrefix(rawMsg, "QUIT") {
 			os.Exit(1)
 		} else {
@@ -71,6 +72,10 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 		}
 
 	}
+}
+
+func logWithTimestamp(rawMsg string) {
+	fmt.Println("LOG " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + rawMsg)
 }
 
 // startGossipServer: set tcp gossip server
@@ -82,7 +87,7 @@ func startGossipServer(node *Node, port string) {
 	}
 	for {
 		conn, err := ln.Accept()
-		fmt.Println(conn.RemoteAddr().String())
+		// fmt.Println(conn.RemoteAddr().String())
 		if err != nil {
 			fmt.Println("Error accepting: ", err.Error())
 			os.Exit(1)
@@ -111,11 +116,11 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 		memberString := strings.Join(node.MembersSet.SetToArray(), ",") + "\n"
 		fmt.Fprintf(conn, memberString)
 		// send JOIN msg
-		go sendGossipingMessge(node, "JOIN", 0, addrPort)
+		go sendGossipingMsg(node, "JOIN", 0, addrPort)
 	} else if strings.HasPrefix(gossipRawMsg, "JOIN") {
 		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
 		if node.MembersSet.SetAdd(rawMsg) {
-			go sendGossipingMessge(node, "JOIN", round+1, rawMsg)
+			go sendGossipingMsg(node, "JOIN", round+1, rawMsg)
 			fmt.Println("New User:" + rawMsg)
 			fmt.Print("Updated Membership List")
 			fmt.Println(node.MembersSet.SetToArray())
@@ -124,12 +129,13 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
 		if node.Transactions.SetAdd(rawMsg) {
 			// First time infected
-			go sendGossipingMessge(node, "TRANSACTION", round+1, rawMsg)
+			logWithTimestamp(rawMsg)
+			go sendGossipingMsg(node, "TRANSACTION", round+1, rawMsg)
 		}
 	} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
 		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
 		if node.MembersSet.SetDelete(rawMsg) {
-			go sendGossipingMessge(node, "DEAD", round+1, rawMsg)
+			go sendGossipingMsg(node, "DEAD", round+1, rawMsg)
 		}
 	} else {
 		fmt.Println("Unknown gossip message format.")
@@ -144,17 +150,17 @@ func ParseGossipingMessage(gossipRawMsg string) (int, string) {
 	return round, rawMsg
 }
 
-// sendGossipingMessge: header: "JOIN, TRANSACTION, DEAD", round, message.
+// sendGossipingMsg: header: "JOIN, TRANSACTION, DEAD", round, message.
 // !! add newline in the mesg passed in
-func sendGossipingMessge(node *Node, header string, round int, mesg string) {
+func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 	gossipMesg := ""
 	for {
 		NumMembers := node.MembersSet.Size()
-		maxRound := int(2 * math.Log(float64(NumMembers)))
+		maxRound := int(10 * math.Log(float64(NumMembers)))
 		if round > maxRound {
 			break
 		}
-		gossipMesg = header + "," + strconv.Itoa(round) + "," + mesg
+		gossipMesg = header + "," + strconv.Itoa(round) + "," + mesg + "\n"
 		for i := 0; i < 2; i++ {
 			// seed in main
 			target := node.MembersSet.GetRandom()
@@ -166,23 +172,24 @@ func sendGossipingMessge(node *Node, header string, round int, mesg string) {
 			if err != nil {
 				// failure detected!
 				if strings.HasSuffix(err.Error(), "connect: connection refused") {
-					handleDailFail(node, target)
+					handleDialFail(node, target)
+					break
 				} else {
 					log.Fatal(err)
 				}
 			} else {
 				fmt.Fprintf(conn, gossipMesg)
+				conn.Close()
 			}
-			conn.Close()
 		}
 		round++
 		time.Sleep(gossipInterval)
 	}
 }
 
-func handleDailFail(node *Node, peer string) {
+func handleDialFail(node *Node, peer string) {
 	node.MembersSet.SetDelete(peer)
-	go sendGossipingMessge(node, "DEAD", 0, peer)
+	go sendGossipingMsg(node, "DEAD", 0, peer)
 }
 
 // Notify existing nodes known from INTRODUCE message this node has join the P2P network.
