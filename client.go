@@ -11,7 +11,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"./src/shared"
@@ -25,7 +24,6 @@ type Node struct {
 	Members      []string
 	Transactions *shared.StringSet
 	MembersSet   *shared.StringSet
-	RWlock       sync.RWMutex
 }
 
 // NewNode : construntor for Node struct
@@ -102,12 +100,8 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 
 	reader := bufio.NewReader(conn)
 
-	gossipRawMsg, err := reader.ReadString('\n')
+	gossipRawMsg, _ := reader.ReadString('\n')
 	gossipRawMsg = strings.Trim(gossipRawMsg, "\n")
-	if err == io.EOF {
-		fmt.Println("Node offline")
-		// return
-	}
 
 	// fmt.Printf(gossipRawMsg)
 	if strings.HasPrefix(gossipRawMsg, "HELLO") {
@@ -136,9 +130,7 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 func sendGossipingMessge(node *Node, header string, round int, mesg string) {
 	gossipMesg := ""
 	for {
-		node.RWlock.RLock()
 		NumMembers := node.MembersSet.Size()
-		node.RWlock.RUnlock()
 		maxRound := int(2 * math.Log(float64(NumMembers)))
 		if round > maxRound {
 			break
@@ -189,8 +181,6 @@ func joinP2P(node *Node, addr string, port string) {
 }
 
 func updateMembershiplist(node *Node, membershiplist string) {
-	node.RWlock.Lock()
-	defer node.RWlock.Unlock()
 	m := strings.Trim(membershiplist, "\n")
 	members := strings.Split(m, ",")
 	for _, member := range members {

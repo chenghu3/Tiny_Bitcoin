@@ -19,8 +19,8 @@ import (
 
 // StringSet : Customized set data structure for String
 type StringSet struct {
-	set map[string]bool
-	mux sync.Mutex
+	set    map[string]bool
+	RWlock sync.RWMutex
 }
 
 // NewSet : Construntor for StringSet
@@ -33,9 +33,9 @@ func NewSet() *StringSet {
 // SetAdd : Add method for StringSet
 func (set *StringSet) SetAdd(s string) bool {
 	_, found := set.set[s]
-	set.mux.Lock()
+	set.RWlock.Lock()
 	set.set[s] = true
-	set.mux.Unlock()
+	set.RWlock.Unlock()
 	return !found //False if it existed already
 }
 
@@ -45,22 +45,24 @@ func (set *StringSet) SetDelete(s string) bool {
 	if !found {
 		return false // not such element
 	}
-	set.mux.Lock()
+	set.RWlock.Lock()
 	delete(set.set, s)
-	set.mux.Unlock()
+	set.RWlock.Unlock()
 	return true
 }
 
 // SetHas : Check whether String is in StringSet
 func (set *StringSet) SetHas(s string) bool {
-	set.mux.Lock()
+	set.RWlock.RLock()
 	_, found := set.set[s]
-	set.mux.Unlock()
+	set.RWlock.RUnlock()
 	return found
 }
 
 // SetToArray : Set to array
 func (set *StringSet) SetToArray() []string {
+	set.RWlock.RLock()
+	defer set.RWlock.RUnlock()
 	keys := make([]string, 0)
 	for k := range set.set {
 		keys = append(keys, k)
@@ -69,12 +71,17 @@ func (set *StringSet) SetToArray() []string {
 }
 
 // Size : size
-func (set *StringSet) Size() int {
-	return len(set.set)
+func (set *StringSet) Size() (size int) {
+	set.RWlock.RLock()
+	defer set.RWlock.RUnlock()
+	size = len(set.set)
+	return
 }
 
 // GetRandom : Get a random element from set
 func (set *StringSet) GetRandom() string {
+	set.RWlock.RLock()
+	defer set.RWlock.RUnlock()
 	i := rand.Intn(len(set.set))
 	for k := range set.set {
 		if i == 0 {

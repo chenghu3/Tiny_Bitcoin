@@ -5,3 +5,7 @@ Note:
 
 Disscusion:
 * Design of `sendGossipingMessge` (round and NumMembers)
+
+TODO:
+* Gossip join and dead
+* Log
