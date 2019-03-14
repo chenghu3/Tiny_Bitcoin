@@ -32,8 +32,8 @@ func NewSet() *StringSet {
 
 // SetAdd : Add method for StringSet
 func (set *StringSet) SetAdd(s string) bool {
-	_, found := set.set[s]
 	set.RWlock.Lock()
+	_, found := set.set[s]
 	set.set[s] = true
 	set.RWlock.Unlock()
 	return !found //False if it existed already
@@ -41,11 +41,11 @@ func (set *StringSet) SetAdd(s string) bool {
 
 // SetDelete : Delete method for StringSet
 func (set *StringSet) SetDelete(s string) bool {
+	set.RWlock.Lock()
 	_, found := set.set[s]
 	if !found {
 		return false // not such element
 	}
-	set.RWlock.Lock()
 	delete(set.set, s)
 	set.RWlock.Unlock()
 	return true
