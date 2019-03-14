@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -138,7 +137,8 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 			go sendGossipingMsg(node, "DEAD", round+1, rawMsg)
 		}
 	} else {
-		fmt.Println("Unknown gossip message format.")
+		fmt.Print("Unknown gossip message format:")
+		fmt.Println(gossipRawMsg)
 	}
 }
 
@@ -155,8 +155,8 @@ func ParseGossipingMessage(gossipRawMsg string) (int, string) {
 func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 	gossipMesg := ""
 	for {
-		NumMembers := node.MembersSet.Size()
-		maxRound := int(10 * math.Log(float64(NumMembers))) // TODO: Change to a constant
+		// NumMembers := node.MembersSet.Size()
+		maxRound := 6 //int(10 * math.Log(float64(NumMembers))) // TODO: Change to a constant
 		if round > maxRound {
 			break
 		}
