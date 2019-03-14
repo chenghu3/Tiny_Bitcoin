@@ -176,6 +176,7 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 					break
 				} else {
 					fmt.Println("Dial Error: ", err)
+					i--
 					continue
 				}
 			} else {
