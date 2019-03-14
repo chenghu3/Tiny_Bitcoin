@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"math/rand"
 	"net"
@@ -176,7 +175,8 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 					handleDialFail(node, target)
 					break
 				} else {
-					log.Fatal(err)
+					fmt.Println("Dial Error: ", err)
+					continue
 				}
 			} else {
 				fmt.Fprintf(conn, gossipMesg)
