@@ -246,7 +246,7 @@ func connectToIntroduction(node *Node, gossipPort string) (conn net.Conn) {
 	// node.Members = append(node.Members, localIP+" "+gossipPort)
 	node.MembersSet.SetAdd(localIP + " " + gossipPort)
 	// Connect to Introduction Service
-	serverAddr := "172.22.158.32"
+	serverAddr := "172.22.156.32"
 	conn, err := net.Dial("tcp", serverAddr+":8888")
 	if err != nil {
 		fmt.Println("Error dialing:", err.Error())
