@@ -133,8 +133,13 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 		}
 	} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
 		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
+		if node.MembersSet.SetHas(rawMsg) {
+			fmt.Print("DEAD list before: ")
+			fmt.Println(node.MembersSet.SetToArray())
+		}
 		if node.MembersSet.SetDelete(rawMsg) {
-			fmt.Println("DEAD " + rawMsg)
+			fmt.Print("DEAD list after: ")
+			fmt.Println(node.MembersSet.SetToArray())
 			go sendGossipingMsg(node, "DEAD", round+1, rawMsg)
 		}
 	} else {
