@@ -156,7 +156,7 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 	gossipMesg := ""
 	for {
 		NumMembers := node.MembersSet.Size()
-		maxRound := int(10 * math.Log(float64(NumMembers)))
+		maxRound := int(10 * math.Log(float64(NumMembers))) // TODO: Change to a constant
 		if round > maxRound {
 			break
 		}

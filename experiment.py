@@ -5,8 +5,8 @@ import socket
 hostname = socket.gethostname() 
 addr = socket.gethostbyname(hostname)  
 
-# Open 20 clients, on ports 9000-9019
-for i in range(20):
+# Open clients, on ports 9000+n
+for i in range(25):
     newpid = os.fork()
     if newpid == 0:
         port = 9000 + i
