@@ -180,7 +180,8 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 				if strings.HasSuffix(err.Error(), "connect: connection refused") {
 					fmt.Println("REFUSED: ", err)
 					handleDialFail(node, target)
-					break
+					i--
+					continue
 				} else {
 					fmt.Println("Dial Error: ", err)
 					i--
