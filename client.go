@@ -121,7 +121,7 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 		if node.MembersSet.SetAdd(rawMsg) {
 			go sendGossipingMsg(node, "JOIN", round+1, rawMsg)
 			fmt.Println("New User:" + rawMsg)
-			fmt.Print("Updated Membership List")
+			// fmt.Print("Updated Membership List")
 			fmt.Println(node.MembersSet.SetToArray())
 		}
 	} else if strings.HasPrefix(gossipRawMsg, "TRANSACTION") {
@@ -134,6 +134,7 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 	} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
 		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
 		if node.MembersSet.SetDelete(rawMsg) {
+			fmt.Println("DEAD " + rawMsg)
 			go sendGossipingMsg(node, "DEAD", round+1, rawMsg)
 		}
 	} else {
@@ -172,6 +173,7 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 			if err != nil {
 				// failure detected!
 				if strings.HasSuffix(err.Error(), "connect: connection refused") {
+					fmt.Println("REFUSED: ", err)
 					handleDialFail(node, target)
 					break
 				} else {

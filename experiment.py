@@ -6,7 +6,7 @@ hostname = socket.gethostname()
 addr = socket.gethostbyname(hostname)  
 
 # Open clients, on ports 9000+n
-for i in range(25):
+for i in range(12):
     newpid = os.fork()
     if newpid == 0:
         port = 9000 + i
