@@ -53,7 +53,7 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 			break
 		}
 
-		fmt.Println("SERVICE:" + rawMsg)
+		// fmt.Println("SERVICE:" + rawMsg)
 
 		// TODO: Add a parse message function
 		if strings.HasPrefix(rawMsg, "INTRODUCE") {
@@ -77,7 +77,7 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 }
 
 func logWithTimestamp(rawMsg string) {
-	fmt.Println("LOG " + time.Now().Format("15:04:05") + " " + rawMsg)
+	fmt.Println("LOG " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + rawMsg)
 }
 
 func logBandwithInfo(direction string, byteCount int) {
@@ -93,7 +93,6 @@ func startGossipServer(node *Node, port string) {
 	}
 	for {
 		conn, err := ln.Accept()
-		// fmt.Println(conn.RemoteAddr().String())
 		if err != nil {
 			fmt.Println("Error accepting: ", err.Error())
 			os.Exit(1)
@@ -129,9 +128,9 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
 		if node.MembersSet.SetAdd(rawMsg) {
 			go sendGossipingMsg(node, "JOIN", round+1, rawMsg)
-			fmt.Println("New User:" + rawMsg)
+			// fmt.Println("New User:" + rawMsg)
 			// fmt.Print("Updated Membership List")
-			fmt.Println("MEMBERLISTSIZE:" + strconv.Itoa(node.MembersSet.Size()))
+			// fmt.Println("MEMBERLISTSIZE:" + strconv.Itoa(node.MembersSet.Size()))
 		}
 	} else if strings.HasPrefix(gossipRawMsg, "TRANSACTION") {
 		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
@@ -144,9 +143,9 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 		if len(gossipRawMsg) > 5 {
 			failList := strings.Split(gossipRawMsg[5:], ",")
 			for _, machine := range failList {
-				fmt.Println("SWIM RECEIVED " + machine)
+				// fmt.Println("SWIM RECEIVED " + machine)
 				if node.MembersSet.SetDelete(machine) {
-					fmt.Println("SWIM DELETE " + machine)
+					// fmt.Println("SWIM DELETE " + machine)
 					node.FailMsgBuffer.Add(machine)
 				}
 			}
@@ -185,15 +184,7 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 			conn, err := net.Dial("tcp", ip+":"+port)
 			// send gossipMesg to peer
 			if err != nil {
-				// failure detected!
-				// if strings.HasSuffix(err.Error(), "connect: connection refused") {
-				// 	fmt.Println("REFUSED: ", err)
-				// 	handleDialFail(node, target)
-				// 	break
-				// } else {
-				// 	fmt.Println("Dial Error: ", err)
-				// 	continue
-				// }
+				// try another peer
 				i--
 			} else {
 				logBandwithInfo("Send", len(gossipMesg))
@@ -204,11 +195,6 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 		round++
 		time.Sleep(gossipInterval)
 	}
-}
-
-func handleDialFail(node *Node, peer string) {
-	node.MembersSet.SetDelete(peer)
-	go sendGossipingMsg(node, "DEAD", 0, peer)
 }
 
 // ping : SWIM style dissemination of membership updates
@@ -276,7 +262,6 @@ func updateMembershiplist(node *Node, membershiplist string) {
 			node.MembersSet.SetAdd(member)
 		}
 	}
-	// node.Members = node.MembersSet.SetToArray()
 }
 
 // TODO: change introduction server to known server
@@ -287,7 +272,6 @@ func connectToIntroduction(node *Node, gossipPort string) (conn net.Conn) {
 		fmt.Println("Error: cannot find local IP.")
 		return
 	}
-	// node.Members = append(node.Members, localIP+" "+gossipPort)
 	node.MembersSet.SetAdd(localIP + " " + gossipPort)
 	// Connect to Introduction Service
 	serverAddr := "172.22.156.34"
