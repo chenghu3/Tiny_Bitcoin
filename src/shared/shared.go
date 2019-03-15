@@ -9,6 +9,64 @@ import (
 	"sync"
 )
 
+// MsgBuffer : A buffer that
+// 1. prioritize messages that has been read fewer times
+// 2. discards a message after reading it more than N times
+type MsgBuffer struct {
+	buf    [][]string
+	RWlock sync.RWMutex
+}
+
+func NewMsgBuffer(n int) *MsgBuffer {
+	buf := new(MsgBuffer)
+	buf.buf = make([][]string, n)
+	//for i, _ := range buf.buf{
+	//	buf.buf[i] = append(buf.buf[i], strconv.Itoa(i))
+	//}
+	return buf
+}
+
+func CloneMsgBuffer(buf *MsgBuffer) *MsgBuffer {
+	newBuf := new(MsgBuffer)
+	newBuf.buf = append([][]string(nil), buf.buf...)
+	return newBuf
+}
+
+func (buf *MsgBuffer) Add(s string) {
+	buf.RWlock.Lock()
+	buf.buf[0] = append(buf.buf[0], s)
+	buf.RWlock.Unlock()
+}
+
+func (buf *MsgBuffer) GetN(n int) []string {
+	buf.RWlock.Lock()
+	idx := 0
+	newBuf := append([][]string(nil), buf.buf...)
+	res := make([]string, 0)
+	for {
+		if idx >= len(buf.buf) || n == 0 {
+			break
+		}
+		l := 0
+		if len(buf.buf[idx]) >= n {
+			l = n
+		} else {
+			l = len(buf.buf[idx])
+		}
+		res = append(res, buf.buf[idx][:l]...)
+		n -= l
+
+		newBuf[idx] = newBuf[idx][l:]
+		if idx < len(buf.buf)-1 {
+			newBuf[idx+1] = append(buf.buf[idx+1], buf.buf[idx][:l]...)
+		}
+		idx++
+	}
+	buf.buf = newBuf
+	buf.RWlock.Unlock()
+	return res
+}
+
 // **************************************** //
 // *****  Node struct defination ********* //
 // *************************************** //
@@ -17,7 +75,7 @@ import (
 // *****  StringSet defination ********* //
 // ************************************* //
 
-// StringSet : Customized set data structure for String
+// StringSet : Customized thread-safe set data structure for String
 type StringSet struct {
 	set    map[string]bool
 	RWlock sync.RWMutex
@@ -42,12 +100,12 @@ func (set *StringSet) SetAdd(s string) bool {
 // SetDelete : Delete method for StringSet
 func (set *StringSet) SetDelete(s string) bool {
 	set.RWlock.Lock()
+	defer set.RWlock.Unlock()
 	_, found := set.set[s]
 	if !found {
 		return false // not such element
 	}
 	delete(set.set, s)
-	set.RWlock.Unlock()
 	return true
 }
 
@@ -82,6 +140,9 @@ func (set *StringSet) Size() (size int) {
 func (set *StringSet) GetRandom() string {
 	set.RWlock.RLock()
 	defer set.RWlock.RUnlock()
+	if len(set.set) == 0 {
+		return ""
+	}
 	i := rand.Intn(len(set.set))
 	for k := range set.set {
 		if i == 0 {

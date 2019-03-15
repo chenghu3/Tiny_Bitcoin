@@ -16,13 +16,15 @@ import (
 )
 
 const gossipInterval time.Duration = 500 * time.Millisecond
+const pingInterval time.Duration = 300 * time.Millisecond
 
 // Node defination
 type Node struct {
-	Port         string
-	Members      []string
-	Transactions *shared.StringSet
-	MembersSet   *shared.StringSet
+	Port          string
+	Members       []string
+	Transactions  *shared.StringSet
+	MembersSet    *shared.StringSet
+	FailMsgBuffer *shared.MsgBuffer
 }
 
 // NewNode : construntor for Node struct
@@ -32,6 +34,7 @@ func NewNode(port string) *Node {
 	node.Members = make([]string, 0)
 	node.Transactions = shared.NewSet()
 	node.MembersSet = shared.NewSet()
+	node.FailMsgBuffer = shared.NewMsgBuffer(10)
 	return node
 }
 
@@ -122,7 +125,7 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 			go sendGossipingMsg(node, "JOIN", round+1, rawMsg)
 			fmt.Println("New User:" + rawMsg)
 			// fmt.Print("Updated Membership List")
-			fmt.Println(node.MembersSet.SetToArray())
+			fmt.Println("MEMBERLISTSIZE:" + strconv.Itoa(node.MembersSet.Size()))
 		}
 	} else if strings.HasPrefix(gossipRawMsg, "TRANSACTION") {
 		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
@@ -132,10 +135,15 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 			go sendGossipingMsg(node, "TRANSACTION", round+1, rawMsg)
 		}
 	} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
-		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
-		if node.MembersSet.SetDelete(rawMsg) {
-			fmt.Println("DEAD " + rawMsg)
-			go sendGossipingMsg(node, "DEAD", round+1, rawMsg)
+		if len(gossipRawMsg) > 5 {
+			failList := strings.Split(gossipRawMsg[5:], ",")
+			for _, machine := range failList {
+				fmt.Println("SWIM RECEIVED " + machine)
+				if node.MembersSet.SetDelete(machine) {
+					fmt.Println("SWIM DELETE " + machine)
+					node.FailMsgBuffer.Add(machine)
+				}
+			}
 		}
 	} else {
 		fmt.Print("Unknown gossip message format:")
@@ -172,15 +180,15 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 			// send gossipMesg to peer
 			if err != nil {
 				// failure detected!
-				if strings.HasSuffix(err.Error(), "connect: connection refused") {
-					fmt.Println("REFUSED: ", err)
-					handleDialFail(node, target)
-					break
-				} else {
-					fmt.Println("Dial Error: ", err)
-					i--
-					continue
-				}
+				// if strings.HasSuffix(err.Error(), "connect: connection refused") {
+				// 	fmt.Println("REFUSED: ", err)
+				// 	handleDialFail(node, target)
+				// 	break
+				// } else {
+				// 	fmt.Println("Dial Error: ", err)
+				// 	continue
+				// }
+				i--
 			} else {
 				fmt.Fprintf(conn, gossipMesg)
 				conn.Close()
@@ -194,6 +202,38 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 func handleDialFail(node *Node, peer string) {
 	node.MembersSet.SetDelete(peer)
 	go sendGossipingMsg(node, "DEAD", 0, peer)
+}
+
+// ping : SWIM style dissemination of membership updates
+func ping(node *Node) {
+	for {
+		time.Sleep(pingInterval)
+		target := node.MembersSet.GetRandom()
+		if target == "" {
+			continue
+		}
+		targetPeer := strings.Split(target, " ")
+		ip := targetPeer[0]
+		port := targetPeer[1]
+		conn, err := net.Dial("tcp", ip+":"+port)
+		if err != nil {
+			// failure detected!
+			if strings.HasSuffix(err.Error(), "connect: connection refused") {
+				fmt.Println("REFUSED:", err)
+				node.MembersSet.SetDelete(target)
+				// go sendGossipingMsg(node, "DEAD", 0, target)
+				node.FailMsgBuffer.Add(target)
+			} else {
+				fmt.Println("Dial Error: ", err)
+			}
+		} else {
+			// SWIM Implementation would send membership update message here
+			swimMsg := "DEAD " + strings.Join(node.FailMsgBuffer.GetN(10), ",") + "\n"
+			fmt.Fprintf(conn, swimMsg)
+			fmt.Print("SWIM SENT " + swimMsg)
+			conn.Close()
+		}
+	}
 }
 
 // Notify existing nodes known from INTRODUCE message this node has join the P2P network.
@@ -267,6 +307,9 @@ func main() {
 
 	// Start gossip protocol server
 	go startGossipServer(node, gossipPort)
+
+	// Start SWIM-style failure detection
+	go ping(node)
 
 	// Receive message from Introduction Service
 	handleServiceTCPConnection(node, introdutionConn)
