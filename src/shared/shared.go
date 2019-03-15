@@ -17,6 +17,7 @@ type MsgBuffer struct {
 	RWlock sync.RWMutex
 }
 
+// NewMsgBuffer : MsgBuffer constructor
 func NewMsgBuffer(n int) *MsgBuffer {
 	buf := new(MsgBuffer)
 	buf.buf = make([][]string, n)
@@ -26,18 +27,22 @@ func NewMsgBuffer(n int) *MsgBuffer {
 	return buf
 }
 
+// CloneMsgBuffer : MsgBuffer copy constructor
 func CloneMsgBuffer(buf *MsgBuffer) *MsgBuffer {
 	newBuf := new(MsgBuffer)
 	newBuf.buf = append([][]string(nil), buf.buf...)
 	return newBuf
 }
 
+// Add : add an element to the buffer
 func (buf *MsgBuffer) Add(s string) {
 	buf.RWlock.Lock()
 	buf.buf[0] = append(buf.buf[0], s)
 	buf.RWlock.Unlock()
 }
 
+// GetN : get N messages, prioritize messages that has been read less times,
+// and update the "counter" for each message read
 func (buf *MsgBuffer) GetN(n int) []string {
 	buf.RWlock.Lock()
 	idx := 0

@@ -20,19 +20,19 @@ const pingInterval time.Duration = 300 * time.Millisecond
 
 // Node defination
 type Node struct {
-	Port          string
-	Members       []string
-	Transactions  *shared.StringSet
-	MembersSet    *shared.StringSet
-	FailMsgBuffer *shared.MsgBuffer
+	Port              string
+	Transactions      *shared.StringSet
+	TransactionBuffer *shared.MsgBuffer
+	MembersSet        *shared.StringSet
+	FailMsgBuffer     *shared.MsgBuffer
 }
 
 // NewNode : construntor for Node struct
 func NewNode(port string) *Node {
 	node := new(Node)
 	node.Port = port
-	node.Members = make([]string, 0)
 	node.Transactions = shared.NewSet()
+	node.TransactionBuffer = shared.NewMsgBuffer(25)
 	node.MembersSet = shared.NewSet()
 	node.FailMsgBuffer = shared.NewMsgBuffer(10)
 	return node
@@ -65,8 +65,9 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 		} else if strings.HasPrefix(rawMsg, "TRANSACTION") {
 			// Handle TRANSACTION
 			node.Transactions.SetAdd(rawMsg)
+			node.TransactionBuffer.Add(rawMsg)
 			logWithTimestamp(rawMsg)
-			go sendGossipingMsg(node, "TRANSACTION", 0, rawMsg)
+			// go sendGossipingMsg(node, "TRANSACTION", 0, rawMsg)
 		} else if strings.HasPrefix(rawMsg, "DIE") || strings.HasPrefix(rawMsg, "QUIT") {
 			os.Exit(1)
 		} else {
@@ -107,47 +108,51 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 
 	reader := bufio.NewReader(conn)
 
-	gossipRawMsg, _ := reader.ReadString('\n')
-	gossipRawMsg = strings.Trim(gossipRawMsg, "\n")
+	stop := false
+	for !stop {
+		gossipRawMsg, err := reader.ReadString('\n')
+		stop = err == io.EOF
+		gossipRawMsg = strings.Trim(gossipRawMsg, "\n")
+		// fmt.Println("RECEIVING", gossipRawMsg)
 
-	// fmt.Printf(gossipRawMsg)
-	if strings.HasPrefix(gossipRawMsg, "HELLO") {
-		// node.Members = append(node.Members, addr+" "+strings.Split(gossipRawMsg, " ")[1])
-		addrPort := addr + " " + strings.Split(gossipRawMsg, " ")[1]
-		node.MembersSet.SetAdd(addrPort)
-		memberString := strings.Join(node.MembersSet.SetToArray(), ",") + "\n"
-		fmt.Fprintf(conn, memberString)
-		// send JOIN msg
-		go sendGossipingMsg(node, "JOIN", 0, addrPort)
-	} else if strings.HasPrefix(gossipRawMsg, "JOIN") {
-		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
-		if node.MembersSet.SetAdd(rawMsg) {
-			go sendGossipingMsg(node, "JOIN", round+1, rawMsg)
-			fmt.Println("New User:" + rawMsg)
-			// fmt.Print("Updated Membership List")
-			fmt.Println("MEMBERLISTSIZE:" + strconv.Itoa(node.MembersSet.Size()))
-		}
-	} else if strings.HasPrefix(gossipRawMsg, "TRANSACTION") {
-		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
-		if node.Transactions.SetAdd(rawMsg) {
-			// First time infected
-			logWithTimestamp(rawMsg)
-			go sendGossipingMsg(node, "TRANSACTION", round+1, rawMsg)
-		}
-	} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
-		if len(gossipRawMsg) > 5 {
-			failList := strings.Split(gossipRawMsg[5:], ",")
-			for _, machine := range failList {
-				fmt.Println("SWIM RECEIVED " + machine)
-				if node.MembersSet.SetDelete(machine) {
-					fmt.Println("SWIM DELETE " + machine)
-					node.FailMsgBuffer.Add(machine)
+		if strings.HasPrefix(gossipRawMsg, "HELLO") {
+			addrPort := addr + " " + strings.Split(gossipRawMsg, " ")[1]
+			node.MembersSet.SetAdd(addrPort)
+			memberString := strings.Join(node.MembersSet.SetToArray(), ",") + "\n"
+			fmt.Fprintf(conn, memberString)
+			// send JOIN msg
+			go sendGossipingMsg(node, "JOIN", 0, addrPort)
+		} else if strings.HasPrefix(gossipRawMsg, "JOIN") {
+			round, rawMsg := ParseGossipingMessage(gossipRawMsg)
+			if node.MembersSet.SetAdd(rawMsg) {
+				go sendGossipingMsg(node, "JOIN", round+1, rawMsg)
+				fmt.Println("New User:" + rawMsg)
+				fmt.Println("MEMBERLIST SIZE" + strconv.Itoa(node.MembersSet.Size()))
+			}
+		} else if strings.HasPrefix(gossipRawMsg, "TRANSACTION") {
+			// _, rawMsg := ParseGossipingMessage(gossipRawMsg)
+			rawMsg := gossipRawMsg
+			if node.Transactions.SetAdd(rawMsg) {
+				// First time infected
+				logWithTimestamp(rawMsg)
+				// go sendGossipingMsg(node, "TRANSACTION", round+1, rawMsg)
+				node.TransactionBuffer.Add(rawMsg)
+			}
+		} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
+			if len(gossipRawMsg) > 5 {
+				failList := strings.Split(gossipRawMsg[5:], ",")
+				for _, machine := range failList {
+					fmt.Println("SWIM RECEIVED " + machine)
+					if node.MembersSet.SetDelete(machine) {
+						fmt.Println("SWIM DELETE " + machine)
+						node.FailMsgBuffer.Add(machine)
+					}
 				}
 			}
+		} else {
+			fmt.Print("Unknown gossip message format:")
+			fmt.Println(gossipRawMsg)
 		}
-	} else {
-		fmt.Print("Unknown gossip message format:")
-		fmt.Println(gossipRawMsg)
 	}
 }
 
@@ -180,14 +185,6 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 			// send gossipMesg to peer
 			if err != nil {
 				// failure detected!
-				// if strings.HasSuffix(err.Error(), "connect: connection refused") {
-				// 	fmt.Println("REFUSED: ", err)
-				// 	handleDialFail(node, target)
-				// 	break
-				// } else {
-				// 	fmt.Println("Dial Error: ", err)
-				// 	continue
-				// }
 				i--
 			} else {
 				fmt.Fprintf(conn, gossipMesg)
@@ -219,10 +216,9 @@ func ping(node *Node) {
 		if err != nil {
 			// failure detected!
 			if strings.HasSuffix(err.Error(), "connect: connection refused") {
-				fmt.Println("REFUSED:", err)
 				node.MembersSet.SetDelete(target)
-				// go sendGossipingMsg(node, "DEAD", 0, target)
 				node.FailMsgBuffer.Add(target)
+				fmt.Println("FAILURE DETECTED " + target)
 			} else {
 				fmt.Println("Dial Error: ", err)
 			}
@@ -231,6 +227,9 @@ func ping(node *Node) {
 			swimMsg := "DEAD " + strings.Join(node.FailMsgBuffer.GetN(10), ",") + "\n"
 			fmt.Fprintf(conn, swimMsg)
 			fmt.Print("SWIM SENT " + swimMsg)
+			transactionsMsg := strings.Join(node.TransactionBuffer.GetN(10000), "\n") + "\n"
+			fmt.Fprintf(conn, transactionsMsg)
+			// fmt.Print("TRANSACTIONS " + transactionsMsg)
 			conn.Close()
 		}
 	}
@@ -267,7 +266,6 @@ func updateMembershiplist(node *Node, membershiplist string) {
 			node.MembersSet.SetAdd(member)
 		}
 	}
-	// node.Members = node.MembersSet.SetToArray()
 }
 
 // TODO: change introduction server to known server
