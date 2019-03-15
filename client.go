@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"./src/shared"
@@ -24,6 +25,7 @@ type Node struct {
 	Members      []string
 	Transactions *shared.StringSet
 	MembersSet   *shared.StringSet
+	mutex        sync.Mutex
 }
 
 // NewNode : construntor for Node struct
@@ -133,16 +135,21 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 			go sendGossipingMsg(node, "TRANSACTION", round+1, rawMsg)
 		}
 	} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
-		round, rawMsg := ParseGossipingMessage(gossipRawMsg)
+		// if node.MembersSet.SetHas(rawMsg) {
+		// 	fmt.Print("DEAD list before: ")
+		// 	fmt.Println(node.MembersSet.SetToArray())
+		// }
+		params := strings.Split(gossipRawMsg, ",")
+		rawMsg := params[1]
+		// node.mutex.Lock()
 		if node.MembersSet.SetHas(rawMsg) {
-			fmt.Print("DEAD list before: ")
-			fmt.Println(node.MembersSet.SetToArray())
+			node.MembersSet.SetDelete(rawMsg)
 		}
-		if node.MembersSet.SetDelete(rawMsg) {
-			fmt.Print("DEAD list after: ")
-			fmt.Println(node.MembersSet.SetToArray())
-			go sendGossipingMsg(node, "DEAD", round+1, rawMsg)
-		}
+		// node.mutex.Unlock()
+		// 	fmt.Print("DEAD list after: ")
+		// 	fmt.Println(node.MembersSet.SetToArray())
+		// 	go sendGossipingMsg(node, "DEAD", round+1, rawMsg)
+		// }
 	} else if strings.HasPrefix(gossipRawMsg, "PING") {
 		return
 	} else {
@@ -165,7 +172,7 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 	gossipMesg := ""
 	for {
 		NumMembers := node.MembersSet.Size()
-		maxRound := int(10 * math.Log(float64(NumMembers))) // TODO: Change to a constant
+		maxRound := int(20 * math.Log(float64(NumMembers))) // TODO: Change to a constant
 		if round > maxRound {
 			break
 		}
@@ -202,9 +209,29 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 	}
 }
 
-func handleDialFail(node *Node, peer string) {
-	node.MembersSet.SetDelete(peer)
-	go sendGossipingMsg(node, "DEAD", 0, peer)
+func handleDialFail(node *Node, deadPeer string) {
+	// node.mutex.Lock()
+	node.MembersSet.SetDelete(deadPeer)
+	for _, peer := range node.MembersSet.SetToArray() {
+		targetPeer := strings.Split(peer, " ")
+		ip := targetPeer[0]
+		port := targetPeer[1]
+		conn, err := net.Dial("tcp", ip+":"+port)
+		deadMesg := "DEAD" + "," + deadPeer
+		if err != nil {
+			// if strings.HasSuffix(err.Error(), "connect: connection refused") {
+			// 	fmt.Println("REFUSED: ", err)
+			// 	go handleDialFail(node, peer)
+			// } else {
+			// 	fmt.Println("Fail Dial Error: ", err)
+			// }
+			continue
+		} else {
+			fmt.Fprintf(conn, deadMesg)
+			conn.Close()
+		}
+	}
+	// node.mutex.Unlock()
 }
 
 // Notify existing nodes known from INTRODUCE message this node has join the P2P network.
@@ -252,7 +279,7 @@ func connectToIntroduction(node *Node, gossipPort string) (conn net.Conn) {
 	// node.Members = append(node.Members, localIP+" "+gossipPort)
 	node.MembersSet.SetAdd(localIP + " " + gossipPort)
 	// Connect to Introduction Service
-	serverAddr := "172.22.156.32"
+	serverAddr := "172.22.156.34"
 	conn, err := net.Dial("tcp", serverAddr+":8888")
 	if err != nil {
 		fmt.Println("Error dialing:", err.Error())
@@ -262,35 +289,35 @@ func connectToIntroduction(node *Node, gossipPort string) (conn net.Conn) {
 	return
 }
 
-// func swimFailureDection(node *Node) {
-// 	for {
-// 		if node.MembersSet.Size() == 0 {
-// 			time.Sleep(failureInterval)
-// 			continue
-// 		} else {
-// 			NumMembers := node.MembersSet.Size()
-// 			for i := 0; i < int(NumMembers/10); i++ {
-// 				target := node.MembersSet.GetRandom()
-// 				targetPeer := strings.Split(target, " ")
-// 				ip := targetPeer[0]
-// 				port := targetPeer[1]
-// 				conn, err := net.Dial("tcp", ip+":"+port)
-// 				if err != nil {
-// 					if strings.HasSuffix(err.Error(), "connect: connection refused") {
-// 						fmt.Println("REFUSED: ", err)
-// 						go handleDialFail(node, target)
-// 					} else {
-// 						fmt.Println("Fail Dial Error: ", err)
-// 					}
-// 				} else {
-// 					fmt.Fprintf(conn, "PING")
-// 					conn.Close()
-// 				}
-// 			}
-// 			time.Sleep(failureInterval)
-// 		}
-// 	}
-// }
+func swimFailureDection(node *Node) {
+	for {
+		if node.MembersSet.Size() == 0 {
+			time.Sleep(failureInterval)
+			continue
+		} else {
+			NumMembers := node.MembersSet.Size()
+			for i := 0; i < int(NumMembers/10); i++ {
+				target := node.MembersSet.GetRandom()
+				targetPeer := strings.Split(target, " ")
+				ip := targetPeer[0]
+				port := targetPeer[1]
+				conn, err := net.Dial("tcp", ip+":"+port)
+				if err != nil {
+					if strings.HasSuffix(err.Error(), "connect: connection refused") {
+						fmt.Println("REFUSED: ", err)
+						go handleDialFail(node, target)
+					} else {
+						fmt.Println("Fail Dial Error: ", err)
+					}
+				} else {
+					fmt.Fprintf(conn, "PING")
+					conn.Close()
+				}
+			}
+			time.Sleep(failureInterval)
+		}
+	}
+}
 
 func main() {
 	args := os.Args
@@ -309,7 +336,7 @@ func main() {
 	// Start gossip protocol server
 	go startGossipServer(node, gossipPort)
 
-	// go swimFailureDection(node)
+	go swimFailureDection(node)
 
 	// Receive message from Introduction Service
 	handleServiceTCPConnection(node, introdutionConn)
