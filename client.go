@@ -247,6 +247,7 @@ func joinP2P(node *Node, addr string, port string) {
 	// receive membershiplist back
 	reader := bufio.NewReader(conn)
 	membershiplist, err := reader.ReadString('\n')
+	logBandwithInfo("Recieve", len(membershiplist))
 	if err == io.EOF {
 		hostname, _ := net.LookupAddr(addr)
 		remotehost := hostname[0]
