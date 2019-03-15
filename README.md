@@ -11,8 +11,8 @@ Go 1.11.4, Python 36
 * To build:
     `go build client.go`
 * Run program:
-    `./client.go PORT`  
-  Alternatively, use our Python3 script experiment.py to start multiple clients (starting a node every 0.5s) and write stdout to logfiles.  
+    `./client PORT`  
+  Alternatively, use our Python3 script `experiment.py` to start multiple clients (starting a node every 0.5s) and write stdout to logfiles.  
   Usage of Python script:  
     `python36 experiment.py [NUMBER OF CLIENTS]`
 * Plotting:
