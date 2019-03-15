@@ -46,8 +46,8 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 
 	for {
 		rawMsg, err := reader.ReadString('\n')
+		logBandwithInfo("Recieve", len(rawMsg))
 		rawMsg = strings.Trim(rawMsg, "\n")
-
 		if err == io.EOF {
 			fmt.Println("Server offline")
 			break
@@ -77,7 +77,11 @@ func handleServiceTCPConnection(node *Node, conn net.Conn) {
 }
 
 func logWithTimestamp(rawMsg string) {
-	fmt.Println("LOG " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + rawMsg)
+	fmt.Println("LOG " + time.Now().Format("15:04:05") + " " + rawMsg)
+}
+
+func logBandwithInfo(direction string, byteCount int) {
+	fmt.Println("Bandwith " + direction + " " + time.Now().Format("15:04:05") + " " + strconv.Itoa(byteCount))
 }
 
 // startGossipServer: set tcp gossip server
@@ -108,6 +112,7 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 	reader := bufio.NewReader(conn)
 
 	gossipRawMsg, _ := reader.ReadString('\n')
+	logBandwithInfo("Recieve", len(gossipRawMsg))
 	gossipRawMsg = strings.Trim(gossipRawMsg, "\n")
 
 	// fmt.Printf(gossipRawMsg)
@@ -116,6 +121,7 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 		addrPort := addr + " " + strings.Split(gossipRawMsg, " ")[1]
 		node.MembersSet.SetAdd(addrPort)
 		memberString := strings.Join(node.MembersSet.SetToArray(), ",") + "\n"
+		logBandwithInfo("Send", len(memberString))
 		fmt.Fprintf(conn, memberString)
 		// send JOIN msg
 		go sendGossipingMsg(node, "JOIN", 0, addrPort)
@@ -190,6 +196,7 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 				// }
 				i--
 			} else {
+				logBandwithInfo("Send", len(gossipMesg))
 				fmt.Fprintf(conn, gossipMesg)
 				conn.Close()
 			}
@@ -229,6 +236,7 @@ func ping(node *Node) {
 		} else {
 			// SWIM Implementation would send membership update message here
 			swimMsg := "DEAD " + strings.Join(node.FailMsgBuffer.GetN(10), ",") + "\n"
+			logBandwithInfo("Send", len(swimMsg))
 			fmt.Fprintf(conn, swimMsg)
 			fmt.Print("SWIM SENT " + swimMsg)
 			conn.Close()
@@ -244,6 +252,7 @@ func joinP2P(node *Node, addr string, port string) {
 	if err != nil {
 		fmt.Println("Error dialing:", err.Error())
 	} else {
+		logBandwithInfo("Send", len("HELLO "+node.Port+"\n"))
 		fmt.Fprintf(conn, "HELLO "+node.Port+"\n")
 	}
 	// receive membershiplist back
@@ -286,6 +295,7 @@ func connectToIntroduction(node *Node, gossipPort string) (conn net.Conn) {
 	if err != nil {
 		fmt.Println("Error dialing:", err.Error())
 	} else {
+		logBandwithInfo("Send", len("CONNECT "+localIP+" "+gossipPort+"\n"))
 		fmt.Fprintf(conn, "CONNECT "+localIP+" "+gossipPort+"\n")
 	}
 	return
