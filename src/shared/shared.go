@@ -198,8 +198,3 @@ func GetLocalIP() string {
 	}
 	return ""
 }
-
-func ParseMessage(msg string) (string, string, string) {
-	params := strings.Split(msg, " ")
-	return params[0], params[1], params[2]
-}
