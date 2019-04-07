@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"../blockchain"
 	"../shared"
 )
 
@@ -24,6 +25,7 @@ type Node struct {
 	TransactionBuffer *shared.MsgBuffer
 	MembersSet        *shared.StringSet
 	FailMsgBuffer     *shared.MsgBuffer
+	blockChain        []blockchain.Block
 }
 
 // NewNode : construntor for Node struct

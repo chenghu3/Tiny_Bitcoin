@@ -198,3 +198,19 @@ func GetLocalIP() string {
 	}
 	return ""
 }
+
+type Mempool []string
+
+func (s Mempool) Len() int {
+	return len(s)
+}
+func (s Mempool) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+func (s Mempool) Less(i, j int) bool {
+	timeI := strings.Split(s[i], " ")[1]
+	timeJ := strings.Split(s[j], " ")[1]
+	floatI, _ := strconv.ParseFloat(timeI, 64)
+	floatJ, _ := strconv.ParseFloat(timeJ, 64)
+	return floatI < floatJ
+}
