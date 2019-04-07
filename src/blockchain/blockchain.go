@@ -7,15 +7,24 @@ import (
 )
 
 type Block struct {
-	height            int
-	previousBlockHash string // len = 32
-	transactionList   []string
-	puzzleSolution    string
+	Height            int
+	PreviousBlockHash string // len = 32
+	TransactionList   []string
+	PuzzleSolution    string
 }
 
-func (block *Block) getPuzzle() string {
-	oldSolution := block.puzzleSolution
-	block.puzzleSolution = ""
+func NewBlock(height int, previousBlockHash string, transactionList []string) *Block {
+	block := new(Block)
+	block.Height = height
+	block.PreviousBlockHash = previousBlockHash
+	block.TransactionList = transactionList
+	block.PuzzleSolution = ""
+	return block
+}
+
+func (block *Block) GetPuzzle() string {
+	oldSolution := block.PuzzleSolution
+	block.PuzzleSolution = ""
 	var b bytes.Buffer
 	e := gob.NewEncoder(&b)
 	if err := e.Encode(block); err != nil {
@@ -23,12 +32,12 @@ func (block *Block) getPuzzle() string {
 	}
 	h := sha256.New()
 	h.Write(b.Bytes())
-	block.puzzleSolution = oldSolution
+	block.PuzzleSolution = oldSolution
 	byteArray := h.Sum(nil)
 	return string(byteArray)
 }
 
-func (block *Block) getBlockHash() string {
+func (block *Block) GetBlockHash() string {
 	var b bytes.Buffer
 	e := gob.NewEncoder(&b)
 	if err := e.Encode(block); err != nil {

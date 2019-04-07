@@ -7,8 +7,10 @@ import (
 	"math"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"../blockchain"
@@ -17,15 +19,23 @@ import (
 
 const gossipInterval time.Duration = 500 * time.Millisecond
 const pingInterval time.Duration = 300 * time.Millisecond
+const batchSize = 300
+
+var rwlock sync.RWMutex
 
 // Node defination
 type Node struct {
+	ServiceConn       *net.Conn
 	Port              string
 	Transactions      *shared.StringSet
 	TransactionBuffer *shared.MsgBuffer
 	MembersSet        *shared.StringSet
 	FailMsgBuffer     *shared.MsgBuffer
-	blockChain        []blockchain.Block
+	BlockChain        []blockchain.Block
+	NewMsgCount       int
+	Balance           map[int]int
+	Mempool           *shared.StringSet
+	TentativeBlock    *blockchain.Block
 }
 
 // NewNode : construntor for Node struct
@@ -36,6 +46,10 @@ func NewNode(port string) *Node {
 	node.TransactionBuffer = shared.NewMsgBuffer(25)
 	node.MembersSet = shared.NewSet()
 	node.FailMsgBuffer = shared.NewMsgBuffer(10)
+	node.NewMsgCount = 0
+	node.Balance = make(map[int]int) // TODO: Initialize
+	node.Mempool = shared.NewSet()
+	node.TentativeBlock = blockchain.NewBlock(0, "", make([]string, 0))
 	return node
 }
 
@@ -65,14 +79,65 @@ func HandleServiceTCPConnection(node *Node, conn net.Conn) {
 			// Handle TRANSACTION
 			node.Transactions.SetAdd(rawMsg)
 			node.TransactionBuffer.Add(rawMsg)
+			node.Mempool.SetAdd(rawMsg)
+			rwlock.Lock()
+			node.NewMsgCount++
+			rwlock.Unlock()
 			logWithTimestamp(rawMsg)
 			// go sendGossipingMsg(node, "TRANSACTION", 0, rawMsg)
 		} else if strings.HasPrefix(rawMsg, "DIE") || strings.HasPrefix(rawMsg, "QUIT") {
 			os.Exit(1)
+		} else if strings.HasPrefix(rawMsg, "SOLVED") {
+			fmt.Println("SOLUTION RECEIVED: " + rawMsg)
+			arr := strings.Split(rawMsg, " ")
+			solution := arr[2]
+			node.TentativeBlock.PuzzleSolution = solution
+			// Update BlockChain and Mempool
+			// TODO
+
+			// Gossip Block
+			// TODO
+
 		} else {
 			fmt.Println("Unknown message format.")
 		}
 
+	}
+}
+
+func verifyBlock(node *Node, block *blockchain.Block) {
+	// TODO
+}
+
+// updateBalance : update account balance, reject any transactions that cause the account balance go negative
+func updateBalance(node *Node, block *blockchain.Block) {
+	for _, transaction := range block.TransactionList {
+		arr := strings.Split(transaction, " ")
+		srcAccount, _ := strconv.Atoi(arr[3])
+		destAccount, _ := strconv.Atoi(arr[4])
+		amount, _ := strconv.Atoi(arr[5])
+
+		newBalance := node.Balance[srcAccount] - amount
+		if newBalance >= 0 || srcAccount == 0 {
+			node.Balance[srcAccount] = newBalance
+			node.Balance[destAccount] += amount
+		}
+	}
+}
+
+func newVerifiedBlockHandler(node *Node, block *blockchain.Block) {
+	localHeight := len(node.BlockChain) - 1
+	if block.Height == localHeight+1 && node.BlockChain[localHeight].GetBlockHash() == block.PreviousBlockHash {
+		// Update BlockChain
+		node.BlockChain = append(node.BlockChain, *block)
+		// Update Mempool
+		for _, transaction := range block.TransactionList {
+			node.Mempool.SetDelete(transaction)
+		}
+		updateBalance(node, block)
+	} else {
+		// Switch Chain
+		// TODO: Ask for previous blocks, mempool, balance
 	}
 }
 
@@ -140,6 +205,10 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 				logWithTimestamp(rawMsg)
 				// go sendGossipingMsg(node, "TRANSACTION", round+1, rawMsg)
 				node.TransactionBuffer.Add(rawMsg)
+				node.Mempool.SetAdd(rawMsg)
+				rwlock.Lock()
+				node.NewMsgCount++
+				rwlock.Unlock()
 			}
 		} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
 			if len(gossipRawMsg) > 5 {
@@ -229,9 +298,31 @@ func Ping(node *Node) {
 			transactionsMsg := strings.Join(node.TransactionBuffer.GetN(10000), "\n") + "\n"
 			logBandwithInfo("Send", len(transactionsMsg))
 			fmt.Fprintf(conn, transactionsMsg)
+			if node.NewMsgCount >= batchSize {
+				solve(node)
+				node.NewMsgCount = 0
+			}
 			conn.Close()
 		}
 	}
+}
+
+func solve(node *Node) {
+	height := len(node.BlockChain)
+	var previousBlockHash string
+	if height == 0 {
+		previousBlockHash = ""
+	} else {
+		previousBlockHash = node.BlockChain[height-1].GetBlockHash()
+	}
+	sortedMempool := node.Mempool.SetToArray()
+	sort.Sort(shared.Mempool(sortedMempool))
+	sortedMempool = sortedMempool[:2000]
+	block := blockchain.NewBlock(len(node.BlockChain), previousBlockHash, sortedMempool)
+	node.TentativeBlock = block
+	puzzle := block.GetPuzzle()
+	fmt.Println("Sending SOLVE...")
+	fmt.Fprintf(*node.ServiceConn, "SOLVE "+puzzle+"\n")
 }
 
 // Notify existing nodes known from INTRODUCE message this node has join the P2P network.
@@ -281,6 +372,7 @@ func ConnectToIntroduction(node *Node, gossipPort string) (conn net.Conn) {
 	// Connect to Introduction Service
 	serverAddr := "172.22.156.34"
 	conn, err := net.Dial("tcp", serverAddr+":8888")
+	node.ServiceConn = &conn
 	if err != nil {
 		fmt.Println("Error dialing:", err.Error())
 	} else {
