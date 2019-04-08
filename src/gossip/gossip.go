@@ -2,13 +2,11 @@ package gossip
 
 import (
 	"bufio"
-	"encoding/gob"
 	"fmt"
 	"io"
 	"math"
 	"net"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,42 +20,11 @@ const gossipInterval time.Duration = 500 * time.Millisecond
 const pingInterval time.Duration = 300 * time.Millisecond
 const batchSize = 300
 
-var rwlock sync.RWMutex
+var batchRwlock sync.RWMutex
+var heightRwlock sync.RWMutex
 
-// Node defination
-type Node struct {
-	ServiceConn       *net.Conn
-	Port              string
-	Transactions      *shared.StringSet
-	TransactionBuffer *shared.MsgBuffer
-	MembersSet        *shared.StringSet
-	FailMsgBuffer     *shared.MsgBuffer
-	BlockChain        []blockchain.Block
-	NewMsgCount       int
-	Balance           map[int]int
-	Mempool           *shared.StringSet
-	TentativeBlock    *blockchain.Block
-	VerifyChannelMap  map[string]chan bool
-}
-
-// NewNode : construntor for Node struct
-func NewNode(port string) *Node {
-	node := new(Node)
-	node.Port = port
-	node.Transactions = shared.NewSet()
-	node.TransactionBuffer = shared.NewMsgBuffer(25)
-	node.MembersSet = shared.NewSet()
-	node.FailMsgBuffer = shared.NewMsgBuffer(10)
-	node.NewMsgCount = 0
-	node.Balance = make(map[int]int) // TODO: Initialize
-	node.Mempool = shared.NewSet()
-	node.TentativeBlock = blockchain.NewBlock(0, "", make([]string, 0))
-	node.VerifyChannelMap = make(map[string]chan bool)
-	return node
-}
-
-// HandleServiceTCPConnection: handle messge revieved from introduction service
-func HandleServiceTCPConnection(node *Node, conn net.Conn) {
+// HandleServiceTCPConnection : handle messge revieved from introduction service
+func HandleServiceTCPConnection(node *shared.Node, conn net.Conn) {
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
@@ -83,9 +50,9 @@ func HandleServiceTCPConnection(node *Node, conn net.Conn) {
 			node.Transactions.SetAdd(rawMsg)
 			node.TransactionBuffer.Add(rawMsg)
 			node.Mempool.SetAdd(rawMsg)
-			rwlock.Lock()
+			batchRwlock.Lock()
 			node.NewMsgCount++
-			rwlock.Unlock()
+			batchRwlock.Unlock()
 			logWithTimestamp(rawMsg)
 			// go sendGossipingMsg(node, "TRANSACTION", 0, rawMsg)
 		} else if strings.HasPrefix(rawMsg, "DIE") || strings.HasPrefix(rawMsg, "QUIT") {
@@ -100,7 +67,6 @@ func HandleServiceTCPConnection(node *Node, conn net.Conn) {
 
 			// Gossip Block
 			// TODO
-
 		} else if strings.HasPrefix(rawMsg, "VERIFY") {
 			arr := strings.Split(rawMsg, " ")
 			response := arr[1]
@@ -113,65 +79,8 @@ func HandleServiceTCPConnection(node *Node, conn net.Conn) {
 	}
 }
 
-func verifyBlock(node *Node, block *blockchain.Block) {
-	// TODO
-	puzzle := block.GetPuzzle()
-	solution := block.PuzzleSolution
-	fmt.Fprintf(*node.ServiceConn, "VERIFY "+puzzle+" "+solution+"\n")
-	verifyChan := make(chan bool)
-	node.VerifyChannelMap[puzzle] = verifyChan
-	ok := <-verifyChan
-	if ok == true {
-		newVerifiedBlockHandler(node, block)
-	} else {
-		fmt.Println("Verify Failed!")
-		return
-	}
-}
-
-func newVerifiedBlockHandler(node *Node, block *blockchain.Block) {
-	localHeight := len(node.BlockChain) - 1
-
-	if block.Height == localHeight+1 && node.BlockChain[localHeight].GetBlockHash() == block.PreviousBlockHash {
-		// Update BlockChain
-		node.BlockChain = append(node.BlockChain, *block)
-		// Update Mempool
-		for _, transaction := range block.TransactionList {
-			node.Mempool.SetDelete(transaction)
-		}
-		updateBalance(node, block)
-	} else {
-		// Switch Chain
-		// TODO: Ask for previous blocks, mempool, balance
-	}
-}
-
-// updateBalance : update account balance, reject any transactions that cause the account balance go negative
-func updateBalance(node *Node, block *blockchain.Block) {
-	for _, transaction := range block.TransactionList {
-		arr := strings.Split(transaction, " ")
-		srcAccount, _ := strconv.Atoi(arr[3])
-		destAccount, _ := strconv.Atoi(arr[4])
-		amount, _ := strconv.Atoi(arr[5])
-
-		newBalance := node.Balance[srcAccount] - amount
-		if newBalance >= 0 || srcAccount == 0 {
-			node.Balance[srcAccount] = newBalance
-			node.Balance[destAccount] += amount
-		}
-	}
-}
-
-func logWithTimestamp(rawMsg string) {
-	fmt.Println("LOG " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + rawMsg)
-}
-
-func logBandwithInfo(direction string, byteCount int) {
-	fmt.Println("Bandwith " + direction + " " + time.Now().Format("15:04:05") + " " + strconv.Itoa(byteCount))
-}
-
 // StartGossipServer : set tcp gossip server
-func StartGossipServer(node *Node, port string) {
+func StartGossipServer(node *shared.Node, port string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		fmt.Println("Error listening:", err.Error())
@@ -189,7 +98,7 @@ func StartGossipServer(node *Node, port string) {
 }
 
 // handleGossipTCPConnection: handle messge revieved from other peers
-func handleGossipTCPConnection(node *Node, conn net.Conn) {
+func handleGossipTCPConnection(node *shared.Node, conn net.Conn) {
 	defer conn.Close()
 
 	addr := strings.Split(conn.RemoteAddr().String(), ":")[0]
@@ -227,9 +136,9 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 				// go sendGossipingMsg(node, "TRANSACTION", round+1, rawMsg)
 				node.TransactionBuffer.Add(rawMsg)
 				node.Mempool.SetAdd(rawMsg)
-				rwlock.Lock()
+				batchRwlock.Lock()
 				node.NewMsgCount++
-				rwlock.Unlock()
+				batchRwlock.Unlock()
 			}
 		} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
 			if len(gossipRawMsg) > 5 {
@@ -243,7 +152,27 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 				}
 			}
 		} else if strings.HasPrefix(gossipRawMsg, "BLOCK") {
-			block := readBlock(node, reader)
+			block := blockchain.ReadBlock(reader)
+			heightRwlock.RLock()
+			if block.Height > node.CurrHeight {
+				heightRwlock.RUnlock()
+				heightRwlock.Lock()
+				node.CurrHeight++
+				heightRwlock.Unlock()
+				isVerifySuccess := blockchain.VerifyBlock(node, block)
+				if !isVerifySuccess {
+					heightRwlock.Lock()
+					node.CurrHeight--
+					heightRwlock.Unlock()
+					fmt.Println("Verify Failed!")
+				} else {
+					// 1. TODO gossip block
+					go blockchain.SendBlock(node, block)
+					// 2. update blockchain, mempool acoount
+				}
+			} else {
+				heightRwlock.RUnlock()
+			}
 
 		} else {
 			fmt.Print("Unknown gossip message format:")
@@ -261,7 +190,7 @@ func ParseGossipingMessage(gossipRawMsg string) (int, string) {
 }
 
 // sendGossipingMsg: header: "JOIN, TRANSACTION, DEAD", round, message.
-func sendGossipingMsg(node *Node, header string, round int, mesg string) {
+func sendGossipingMsg(node *shared.Node, header string, round int, mesg string) {
 	gossipMesg := ""
 	for {
 		NumMembers := node.MembersSet.Size()
@@ -292,45 +221,8 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 	}
 }
 
-func sendBlock(node *Node, conn net.Conn, block blockchain.Block) {
-	// gossipMesg := ""
-	// for {
-	// 	NumMembers := node.MembersSet.Size()
-	// 	maxRound := int(4 * math.Log(float64(NumMembers))) // TODO: Change to a constant
-	// 	if round > maxRound {
-	// 		break
-	// 	}
-	// for i := 0; i < 2; i++ {
-	// 	// seed in main
-	// 	target := node.MembersSet.GetRandom()
-	// 	targetPeer := strings.Split(target, " ")
-	// 	ip := targetPeer[0]
-	// 	port := targetPeer[1]
-	// 	conn, err := net.Dial("tcp", ip+":"+port)
-	encoder := gob.NewEncoder(conn)
-	// send gossipMesg to peer
-	gossipMesg := "BLOCK\n"
-	fmt.Fprintf(conn, gossipMesg)
-	encoder.Encode(block)
-	// }
-	// 	round++
-	// 	time.Sleep(gossipInterval)
-	// }
-}
-
-func readBlock(node *Node, reader *bufio.Reader) *blockchain.Block {
-	decoder := gob.NewDecoder(reader)
-	block := &blockchain.Block{}
-	err := decoder.Decode(block)
-	if err != nil {
-		fmt.Println("Read Block Error:", err)
-	}
-	fmt.Println("Decoded Block with previous hash: " + block.PreviousBlockHash)
-	return block
-}
-
 // Ping : SWIM style dissemination of membership updates
-func Ping(node *Node) {
+func Ping(node *shared.Node) {
 	for {
 		time.Sleep(pingInterval)
 		target := node.MembersSet.GetRandom()
@@ -360,38 +252,20 @@ func Ping(node *Node) {
 			logBandwithInfo("Send", len(transactionsMsg))
 			fmt.Fprintf(conn, transactionsMsg)
 
-			rwlock.Lock()
+			batchRwlock.Lock()
 			if node.NewMsgCount >= batchSize {
-				solve(node)
+				blockchain.Solve(node)
 				node.NewMsgCount = 0
 			}
-			rwlock.Unlock()
+			batchRwlock.Unlock()
 
 			conn.Close()
 		}
 	}
 }
 
-func solve(node *Node) {
-	height := len(node.BlockChain)
-	var previousBlockHash string
-	if height == 0 {
-		previousBlockHash = ""
-	} else {
-		previousBlockHash = node.BlockChain[height-1].GetBlockHash()
-	}
-	sortedMempool := node.Mempool.SetToArray()
-	sort.Sort(shared.Mempool(sortedMempool))
-	sortedMempool = sortedMempool[:2000]
-	block := blockchain.NewBlock(len(node.BlockChain), previousBlockHash, sortedMempool)
-	node.TentativeBlock = block
-	puzzle := block.GetPuzzle()
-	fmt.Println("Sending SOLVE...")
-	fmt.Fprintf(*node.ServiceConn, "SOLVE "+puzzle+"\n")
-}
-
 // Notify existing nodes known from INTRODUCE message this node has join the P2P network.
-func joinP2P(node *Node, addr string, port string) {
+func joinP2P(node *shared.Node, addr string, port string) {
 	conn, err := net.Dial("tcp", addr+":"+port)
 	defer conn.Close()
 	// send hello to peer
@@ -415,7 +289,7 @@ func joinP2P(node *Node, addr string, port string) {
 	updateMembershiplist(node, membershiplist)
 }
 
-func updateMembershiplist(node *Node, membershiplist string) {
+func updateMembershiplist(node *shared.Node, membershiplist string) {
 	m := strings.Trim(membershiplist, "\n")
 	members := strings.Split(m, ",")
 	for _, member := range members {
@@ -426,7 +300,7 @@ func updateMembershiplist(node *Node, membershiplist string) {
 }
 
 // ConnectToIntroduction TODO: change introduction server to known server
-func ConnectToIntroduction(node *Node, gossipPort string) (conn net.Conn) {
+func ConnectToIntroduction(node *shared.Node, gossipPort string) (conn net.Conn) {
 	// Get local IP address
 	localIP := shared.GetLocalIP()
 	if localIP == "" {
@@ -445,4 +319,12 @@ func ConnectToIntroduction(node *Node, gossipPort string) (conn net.Conn) {
 		fmt.Fprintf(conn, "CONNECT "+localIP+" "+gossipPort+"\n")
 	}
 	return
+}
+
+func logWithTimestamp(rawMsg string) {
+	fmt.Println("LOG " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + rawMsg)
+}
+
+func logBandwithInfo(direction string, byteCount int) {
+	fmt.Println("Bandwith " + direction + " " + time.Now().Format("15:04:05") + " " + strconv.Itoa(byteCount))
 }

@@ -1,21 +1,24 @@
 package shared
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/gob"
 	"fmt"
 	"math/rand"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
-
-	"../blockchain"
 )
 
+// MergeInfo : helper struct for switch chain
 type MergeInfo struct {
 	Balance map[int]int
 	Mempool StringSet
 }
 
+// MakeMergeInfo : constructor for MergeInfo
 func MakeMergeInfo(balance map[int]int, mempool StringSet) MergeInfo {
 	mergeInfo := new(MergeInfo)
 	mergeInfo.Balance = balance
@@ -25,7 +28,7 @@ func MakeMergeInfo(balance map[int]int, mempool StringSet) MergeInfo {
 
 // BlockBuffer : A buffer that keeps a read counter for each block
 type BlockBuffer struct {
-	blocks   map[*blockchain.Block]int
+	blocks   map[*Block]int
 	maxCount int
 	RWlock   sync.RWMutex
 }
@@ -33,25 +36,25 @@ type BlockBuffer struct {
 // NewBlockBuffer : Constructor
 func NewBlockBuffer(n int) *BlockBuffer {
 	buf := new(BlockBuffer)
-	buf.blocks = make(map[*blockchain.Block]int)
+	buf.blocks = make(map[*Block]int)
 	buf.maxCount = n
 	return buf
 }
 
 // Add : Add a block to the buffer
-func (buf *BlockBuffer) Add(block *blockchain.Block) {
+func (buf *BlockBuffer) Add(block *Block) {
 	buf.RWlock.Lock()
 	buf.blocks[block] = 0
 	buf.RWlock.Unlock()
 }
 
 // GetAll : Retrieve all blocks in the buffer as an array of block pointers
-func (buf *BlockBuffer) GetAll() []*blockchain.Block {
+func (buf *BlockBuffer) GetAll() []*Block {
 	buf.RWlock.Lock()
 	defer buf.RWlock.Unlock()
 
-	result := make([]*blockchain.Block, 0)
-	for block, _ := range buf.blocks {
+	result := make([]*Block, 0)
+	for block := range buf.blocks {
 		buf.blocks[block]++
 		result = append(result, block)
 		if buf.blocks[block] > buf.maxCount {
@@ -124,6 +127,40 @@ func (buf *MsgBuffer) GetN(n int) []string {
 // **************************************** //
 // *****  Node struct defination ********* //
 // *************************************** //
+
+// Node defination
+type Node struct {
+	CurrHeight        int
+	ServiceConn       *net.Conn
+	Port              string
+	Transactions      *StringSet
+	TransactionBuffer *MsgBuffer
+	MembersSet        *StringSet
+	FailMsgBuffer     *MsgBuffer
+	BlockChain        []Block
+	NewMsgCount       int
+	Balance           map[int]int
+	Mempool           *StringSet
+	TentativeBlock    *Block
+	VerifyChannelMap  map[string]chan bool
+}
+
+// NewNode : construntor for Node struct
+func NewNode(port string) *Node {
+	node := new(Node)
+	node.Port = port
+	node.CurrHeight = 0
+	node.Transactions = NewSet()
+	node.TransactionBuffer = NewMsgBuffer(25)
+	node.MembersSet = NewSet()
+	node.FailMsgBuffer = NewMsgBuffer(10)
+	node.NewMsgCount = 0
+	node.Balance = make(map[int]int) // TODO: Initialize
+	node.Mempool = NewSet()
+	node.TentativeBlock = NewBlock(0, "", make([]string, 0))
+	node.VerifyChannelMap = make(map[string]chan bool)
+	return node
+}
 
 // ************************************* //
 // *****  StringSet defination ********* //
@@ -248,6 +285,11 @@ func GetLocalIP() string {
 	return ""
 }
 
+// **************************************** //
+// *****  Sort by timestamp  ************* //
+// *************************************** //
+
+// Mempool : array sort by timestamp rapper
 type Mempool []string
 
 func (s Mempool) Len() int {
@@ -262,4 +304,57 @@ func (s Mempool) Less(i, j int) bool {
 	floatI, _ := strconv.ParseFloat(timeI, 64)
 	floatJ, _ := strconv.ParseFloat(timeJ, 64)
 	return floatI < floatJ
+}
+
+// **************************************** //
+// *****  Block defination *************** //
+// *************************************** //
+
+// Block defination
+type Block struct {
+	randIndentifier   float64 // https://piazza.com/class/jqxvctrwztu5f6?cid=567
+	Height            int
+	PreviousBlockHash string // len = 32
+	TransactionList   []string
+	PuzzleSolution    string
+}
+
+// NewBlock : Blokc constructor
+func NewBlock(height int, previousBlockHash string, transactionList []string) *Block {
+	block := new(Block)
+	block.randIndentifier = rand.Float64()
+	block.Height = height
+	block.PreviousBlockHash = previousBlockHash
+	block.TransactionList = transactionList
+	block.PuzzleSolution = ""
+	return block
+}
+
+// GetPuzzle : get the puzzle of block
+func (block *Block) GetPuzzle() string {
+	oldSolution := block.PuzzleSolution
+	block.PuzzleSolution = ""
+	var b bytes.Buffer
+	e := gob.NewEncoder(&b)
+	if err := e.Encode(block); err != nil {
+		panic(err)
+	}
+	h := sha256.New()
+	h.Write(b.Bytes())
+	block.PuzzleSolution = oldSolution
+	byteArray := h.Sum(nil)
+	return string(byteArray)
+}
+
+// GetBlockHash : get the hash value of the block
+func (block *Block) GetBlockHash() string {
+	var b bytes.Buffer
+	e := gob.NewEncoder(&b)
+	if err := e.Encode(block); err != nil {
+		panic(err)
+	}
+	h := sha256.New()
+	h.Write(b.Bytes())
+	byteArray := h.Sum(nil)
+	return string(byteArray)
 }

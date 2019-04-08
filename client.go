@@ -18,7 +18,7 @@ func main() {
 	gossipPort := args[1]
 	rand.Seed(time.Now().UnixNano())
 
-	node := gossip.NewNode(gossipPort)
+	node := shared.NewNode(gossipPort)
 
 	// Connect to Introduction Service
 	introdutionConn := gossip.ConnectToIntroduction(node, gossipPort)
