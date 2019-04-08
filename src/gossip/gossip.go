@@ -316,10 +316,14 @@ func Ping(node *Node) {
 			transactionsMsg := strings.Join(node.TransactionBuffer.GetN(10000), "\n") + "\n"
 			logBandwithInfo("Send", len(transactionsMsg))
 			fmt.Fprintf(conn, transactionsMsg)
+
+			rwlock.Lock()
 			if node.NewMsgCount >= batchSize {
 				solve(node)
 				node.NewMsgCount = 0
 			}
+			rwlock.Unlock()
+
 			conn.Close()
 		}
 	}
