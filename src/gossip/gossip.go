@@ -9,7 +9,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"../blockchain"
@@ -18,10 +17,6 @@ import (
 
 const gossipInterval time.Duration = 500 * time.Millisecond
 const pingInterval time.Duration = 300 * time.Millisecond
-const batchSize = 300
-
-var batchRwlock sync.RWMutex
-var heightRwlock sync.RWMutex
 
 // HandleServiceTCPConnection : handle messge revieved from introduction service
 func HandleServiceTCPConnection(node *shared.Node, conn net.Conn) {
@@ -50,23 +45,15 @@ func HandleServiceTCPConnection(node *shared.Node, conn net.Conn) {
 			node.Transactions.SetAdd(rawMsg)
 			node.TransactionBuffer.Add(rawMsg)
 			node.Mempool.SetAdd(rawMsg)
-			batchRwlock.Lock()
+			node.RWlock.Lock()
 			node.NewMsgCount++
-			batchRwlock.Unlock()
+			node.RWlock.Unlock()
 			logWithTimestamp(rawMsg)
 			// go sendGossipingMsg(node, "TRANSACTION", 0, rawMsg)
 		} else if strings.HasPrefix(rawMsg, "DIE") || strings.HasPrefix(rawMsg, "QUIT") {
 			os.Exit(1)
 		} else if strings.HasPrefix(rawMsg, "SOLVED") {
-			fmt.Println("SOLUTION RECEIVED: " + rawMsg)
-			arr := strings.Split(rawMsg, " ")
-			solution := arr[2]
-			node.TentativeBlock.PuzzleSolution = solution
-			// Update BlockChain and Mempool
-			// TODO
-
-			// Gossip Block
-			// TODO
+			blockchain.PuzzleSolvedHandler(node, rawMsg)
 		} else if strings.HasPrefix(rawMsg, "VERIFY") {
 			arr := strings.Split(rawMsg, " ")
 			response := arr[1]
@@ -136,9 +123,9 @@ func handleGossipTCPConnection(node *shared.Node, conn net.Conn) {
 				// go sendGossipingMsg(node, "TRANSACTION", round+1, rawMsg)
 				node.TransactionBuffer.Add(rawMsg)
 				node.Mempool.SetAdd(rawMsg)
-				batchRwlock.Lock()
+				node.RWlock.Lock()
 				node.NewMsgCount++
-				batchRwlock.Unlock()
+				node.RWlock.Unlock()
 			}
 		} else if strings.HasPrefix(gossipRawMsg, "DEAD") {
 			if len(gossipRawMsg) > 5 {
@@ -153,27 +140,7 @@ func handleGossipTCPConnection(node *shared.Node, conn net.Conn) {
 			}
 		} else if strings.HasPrefix(gossipRawMsg, "BLOCK") {
 			block := blockchain.ReadBlock(reader)
-			heightRwlock.RLock()
-			if block.Height > node.CurrHeight {
-				heightRwlock.RUnlock()
-				heightRwlock.Lock()
-				node.CurrHeight++
-				heightRwlock.Unlock()
-				isVerifySuccess := blockchain.VerifyBlock(node, block)
-				if !isVerifySuccess {
-					heightRwlock.Lock()
-					node.CurrHeight--
-					heightRwlock.Unlock()
-					fmt.Println("Verify Failed!")
-				} else {
-					// 1. TODO gossip block
-					go blockchain.SendBlock(node, block)
-					// 2. update blockchain, mempool acoount
-				}
-			} else {
-				heightRwlock.RUnlock()
-			}
-
+			go blockchain.RecievedBlockHandler(node, block)
 		} else {
 			fmt.Print("Unknown gossip message format:")
 			fmt.Println(gossipRawMsg)
@@ -252,12 +219,7 @@ func Ping(node *shared.Node) {
 			logBandwithInfo("Send", len(transactionsMsg))
 			fmt.Fprintf(conn, transactionsMsg)
 
-			batchRwlock.Lock()
-			if node.NewMsgCount >= batchSize {
-				blockchain.Solve(node)
-				node.NewMsgCount = 0
-			}
-			batchRwlock.Unlock()
+			blockchain.SwimBatchPuzzleGenerator(node)
 
 			conn.Close()
 		}

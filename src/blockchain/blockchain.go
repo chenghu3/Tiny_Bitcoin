@@ -12,6 +12,8 @@ import (
 	"../shared"
 )
 
+const batchSize = 300
+
 // VerifyBlock : check the integrity of the recieved block
 func VerifyBlock(node *shared.Node, block *shared.Block) bool {
 	// TODO
@@ -24,26 +26,26 @@ func VerifyBlock(node *shared.Node, block *shared.Block) bool {
 	return ok
 }
 
-// NewVerifiedBlockHandler : Local update BlockChain, Mempool, Balance, potential handle Switch Chain
-func NewVerifiedBlockHandler(node *shared.Node, block *shared.Block) {
+// updateBlockChain : Local update BlockChain, Mempool, Balance, potential handle Switch Chain
+func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 	localHeight := len(node.BlockChain) - 1
-
-	if block.Height == localHeight+1 && node.BlockChain[localHeight].GetBlockHash() == block.PreviousBlockHash {
+	//  if is a local solved block, no need to consider Switch Chain
+	if isLocal || (block.Height == localHeight+1 && node.BlockChain[localHeight].GetBlockHash() == block.PreviousBlockHash) {
 		// Update BlockChain
 		node.BlockChain = append(node.BlockChain, *block)
 		// Update Mempool
 		for _, transaction := range block.TransactionList {
 			node.Mempool.SetDelete(transaction)
 		}
-		UpdateBalance(node, block)
+		updateBalance(node, block)
 	} else {
 		// Switch Chain
 		// TODO: Ask for previous blocks, mempool, balance
 	}
 }
 
-// UpdateBalance : update account balance, reject any transactions that cause the account balance go negative
-func UpdateBalance(node *shared.Node, block *shared.Block) {
+// updateBalance : update account balance, reject any transactions that cause the account balance go negative
+func updateBalance(node *shared.Node, block *shared.Block) {
 	for _, transaction := range block.TransactionList {
 		arr := strings.Split(transaction, " ")
 		srcAccount, _ := strconv.Atoi(arr[3])
@@ -84,8 +86,45 @@ func ReadBlock(reader *bufio.Reader) *shared.Block {
 	return block
 }
 
-// Solve : compute puzzle hash and send it to service
-func Solve(node *shared.Node) {
+// RecievedBlockHandler : Handle recieved Block through gossip protocal
+func RecievedBlockHandler(node *shared.Node, block *shared.Block) {
+	node.RWlock.RLock()
+	if block.Height > node.CurrHeight {
+		node.RWlock.RUnlock()
+		node.RWlock.Lock()
+		node.CurrHeight++
+		node.RWlock.Unlock()
+		isVerifySuccess := VerifyBlock(node, block)
+		if !isVerifySuccess {
+			node.RWlock.Lock()
+			node.CurrHeight--
+			node.RWlock.Unlock()
+			fmt.Println("Verify Failed!")
+		} else {
+			// 1. TODO gossip block
+			go SendBlock(node, block)
+			// 2. update blockchain, mempool acoount
+			go updateBlockChain(node, block, false)
+		}
+	} else {
+		node.RWlock.RUnlock()
+	}
+}
+
+// SwimBatchPuzzleGenerator : PuzzleGenerator called in SWIM Ping function
+func SwimBatchPuzzleGenerator(node *shared.Node) {
+	node.RWlock.RLock()
+	if node.NewMsgCount >= batchSize {
+		node.RWlock.RUnlock()
+		solve(node)
+		node.NewMsgCount = 0
+	} else {
+		node.RWlock.RUnlock()
+	}
+}
+
+// solve : compute puzzle hash and send it to service
+func solve(node *shared.Node) {
 	height := len(node.BlockChain)
 	var previousBlockHash string
 	if height == 0 {
@@ -101,4 +140,17 @@ func Solve(node *shared.Node) {
 	puzzle := block.GetPuzzle()
 	fmt.Println("Sending SOLVE...")
 	fmt.Fprintf(*node.ServiceConn, "SOLVE "+puzzle+"\n")
+}
+
+// PuzzleSolvedHandler : handle TentativeBlock once recieve SOLVED from service
+func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
+	fmt.Println("SOLUTION RECEIVED: " + rawMsg)
+	arr := strings.Split(rawMsg, " ")
+	solution := arr[2]
+	node.TentativeBlock.PuzzleSolution = solution
+	// Update BlockChain and Mempool
+	// TODO
+	updateBlockChain(node, node.TentativeBlock, true)
+	// Gossip Block
+	// TODO
 }

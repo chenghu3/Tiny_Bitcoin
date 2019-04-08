@@ -143,6 +143,7 @@ type Node struct {
 	Mempool           *StringSet
 	TentativeBlock    *Block
 	VerifyChannelMap  map[string]chan bool
+	RWlock            sync.RWMutex
 }
 
 // NewNode : construntor for Node struct
