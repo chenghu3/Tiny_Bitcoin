@@ -7,7 +7,47 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"../blockchain"
 )
+
+// BlockBuffer : A buffer that keeps a read counter for each block
+type BlockBuffer struct {
+	blocks   map[*blockchain.Block]int
+	maxCount int
+	RWlock   sync.RWMutex
+}
+
+// NewBlockBuffer : Constructor
+func NewBlockBuffer(n int) *BlockBuffer {
+	buf := new(BlockBuffer)
+	buf.blocks = make(map[*blockchain.Block]int)
+	buf.maxCount = n
+	return buf
+}
+
+// Add : Add a block to the buffer
+func (buf *BlockBuffer) Add(block *blockchain.Block) {
+	buf.RWlock.Lock()
+	buf.blocks[block] = 0
+	buf.RWlock.Unlock()
+}
+
+// GetAll : Retrieve all blocks in the buffer as an array of block pointers
+func (buf *BlockBuffer) GetAll() []*blockchain.Block {
+	buf.RWlock.Lock()
+	defer buf.RWlock.Unlock()
+
+	result := make([]*blockchain.Block, 0)
+	for block, _ := range buf.blocks {
+		buf.blocks[block]++
+		result = append(result, block)
+		if buf.blocks[block] > buf.maxCount {
+			delete(buf.blocks, block)
+		}
+	}
+	return result
+}
 
 // MsgBuffer : A buffer that
 // 1. prioritize messages that has been read fewer times
@@ -21,9 +61,6 @@ type MsgBuffer struct {
 func NewMsgBuffer(n int) *MsgBuffer {
 	buf := new(MsgBuffer)
 	buf.buf = make([][]string, n)
-	//for i, _ := range buf.buf{
-	//	buf.buf[i] = append(buf.buf[i], strconv.Itoa(i))
-	//}
 	return buf
 }
 
