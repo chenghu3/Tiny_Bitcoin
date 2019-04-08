@@ -240,6 +240,8 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 					}
 				}
 			}
+		} else if strings.HasPrefix(gossipRawMsg, "BLOCK") {
+			block := readBlock(node, reader)
 		} else {
 			fmt.Print("Unknown gossip message format:")
 			fmt.Println(gossipRawMsg)
@@ -311,6 +313,14 @@ func sendBlock(node *Node, conn net.Conn, block blockchain.Block) {
 	// 	round++
 	// 	time.Sleep(gossipInterval)
 	// }
+}
+
+func readBlock(node *Node, reader bufio.Reader) (block blockchain.Block) {
+	decoder := gob.Decoder(reader)
+	block := &blockchain.Block{}
+	decoder.Decode(block)
+	fmt.Println("Decoded Block with previous hash: " + block.PreviousBlockHash)
+	return block
 }
 
 // Ping : SWIM style dissemination of membership updates

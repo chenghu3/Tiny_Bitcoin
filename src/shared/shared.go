@@ -11,6 +11,18 @@ import (
 	"../blockchain"
 )
 
+type MergeInfo struct {
+	Balance map[int]int
+	Mempool StringSet
+}
+
+func MakeMergeInfo(balance map[int]int, mempool StringSet) MergeInfo {
+	mergeInfo := new(MergeInfo)
+	mergeInfo.Balance = balance
+	mergeInfo.Mempool = mempool
+	return *mergeInfo
+}
+
 // BlockBuffer : A buffer that keeps a read counter for each block
 type BlockBuffer struct {
 	blocks   map[*blockchain.Block]int
