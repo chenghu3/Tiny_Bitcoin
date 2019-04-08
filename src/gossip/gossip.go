@@ -37,7 +37,7 @@ type Node struct {
 	Balance           map[int]int
 	Mempool           *shared.StringSet
 	TentativeBlock    *blockchain.Block
-	verifyChannel     chan bool
+	VerifyChannelMap  map[string]chan bool
 }
 
 // NewNode : construntor for Node struct
@@ -52,7 +52,7 @@ func NewNode(port string) *Node {
 	node.Balance = make(map[int]int) // TODO: Initialize
 	node.Mempool = shared.NewSet()
 	node.TentativeBlock = blockchain.NewBlock(0, "", make([]string, 0))
-	node.verifyChannel = make(chan bool)
+	node.VerifyChannelMap = make(map[string]chan bool)
 	return node
 }
 
@@ -102,12 +102,10 @@ func HandleServiceTCPConnection(node *Node, conn net.Conn) {
 			// TODO
 
 		} else if strings.HasPrefix(rawMsg, "VERIFY") {
-			isSuccess := strings.Split(rawMsg, " ")[1]
-			if isSuccess == "OK" {
-				node.verifyChannel <- true
-			} else {
-				node.verifyChannel <- false
-			}
+			arr := strings.Split(rawMsg, " ")
+			response := arr[1]
+			blockHash := arr[2]
+			node.VerifyChannelMap[blockHash] <- response == "OK"
 		} else {
 			fmt.Println("Unknown message format.")
 		}
@@ -120,11 +118,31 @@ func verifyBlock(node *Node, block *blockchain.Block) {
 	puzzle := block.GetPuzzle()
 	solution := block.PuzzleSolution
 	fmt.Fprintf(*node.ServiceConn, "VERIFY "+puzzle+" "+solution+"\n")
-	ok := <-node.verifyChannel
+	verifyChan := make(chan bool)
+	node.VerifyChannelMap[puzzle] = verifyChan
+	ok := <-verifyChan
 	if ok == true {
 		newVerifiedBlockHandler(node, block)
 	} else {
+		fmt.Println("Verify Failed!")
 		return
+	}
+}
+
+func newVerifiedBlockHandler(node *Node, block *blockchain.Block) {
+	localHeight := len(node.BlockChain) - 1
+
+	if block.Height == localHeight+1 && node.BlockChain[localHeight].GetBlockHash() == block.PreviousBlockHash {
+		// Update BlockChain
+		node.BlockChain = append(node.BlockChain, *block)
+		// Update Mempool
+		for _, transaction := range block.TransactionList {
+			node.Mempool.SetDelete(transaction)
+		}
+		updateBalance(node, block)
+	} else {
+		// Switch Chain
+		// TODO: Ask for previous blocks, mempool, balance
 	}
 }
 
@@ -141,22 +159,6 @@ func updateBalance(node *Node, block *blockchain.Block) {
 			node.Balance[srcAccount] = newBalance
 			node.Balance[destAccount] += amount
 		}
-	}
-}
-
-func newVerifiedBlockHandler(node *Node, block *blockchain.Block) {
-	localHeight := len(node.BlockChain) - 1
-	if block.Height == localHeight+1 && node.BlockChain[localHeight].GetBlockHash() == block.PreviousBlockHash {
-		// Update BlockChain
-		node.BlockChain = append(node.BlockChain, *block)
-		// Update Mempool
-		for _, transaction := range block.TransactionList {
-			node.Mempool.SetDelete(transaction)
-		}
-		updateBalance(node, block)
-	} else {
-		// Switch Chain
-		// TODO: Ask for previous blocks, mempool, balance
 	}
 }
 
@@ -242,6 +244,7 @@ func handleGossipTCPConnection(node *Node, conn net.Conn) {
 			}
 		} else if strings.HasPrefix(gossipRawMsg, "BLOCK") {
 			block := readBlock(node, reader)
+
 		} else {
 			fmt.Print("Unknown gossip message format:")
 			fmt.Println(gossipRawMsg)
@@ -315,10 +318,13 @@ func sendBlock(node *Node, conn net.Conn, block blockchain.Block) {
 	// }
 }
 
-func readBlock(node *Node, reader bufio.Reader) (block blockchain.Block) {
-	decoder := gob.Decoder(reader)
+func readBlock(node *Node, reader *bufio.Reader) *blockchain.Block {
+	decoder := gob.NewDecoder(reader)
 	block := &blockchain.Block{}
-	decoder.Decode(block)
+	err := decoder.Decode(block)
+	if err != nil {
+		fmt.Println("Read Block Error:", err)
+	}
 	fmt.Println("Decoded Block with previous hash: " + block.PreviousBlockHash)
 	return block
 }
