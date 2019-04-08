@@ -2,6 +2,7 @@ package gossip
 
 import (
 	"bufio"
+	"encoding/gob"
 	"fmt"
 	"io"
 	"math"
@@ -284,6 +285,32 @@ func sendGossipingMsg(node *Node, header string, round int, mesg string) {
 		round++
 		time.Sleep(gossipInterval)
 	}
+}
+
+func sendBlock(node *Node, conn net.Conn, block blockchain.Block) {
+	// gossipMesg := ""
+	// for {
+	// 	NumMembers := node.MembersSet.Size()
+	// 	maxRound := int(4 * math.Log(float64(NumMembers))) // TODO: Change to a constant
+	// 	if round > maxRound {
+	// 		break
+	// 	}
+	// for i := 0; i < 2; i++ {
+	// 	// seed in main
+	// 	target := node.MembersSet.GetRandom()
+	// 	targetPeer := strings.Split(target, " ")
+	// 	ip := targetPeer[0]
+	// 	port := targetPeer[1]
+	// 	conn, err := net.Dial("tcp", ip+":"+port)
+	encoder := gob.NewEncoder(conn)
+	// send gossipMesg to peer
+	gossipMesg := "BLOCK\n"
+	fmt.Fprintf(conn, gossipMesg)
+	encoder.Encode(block)
+	// }
+	// 	round++
+	// 	time.Sleep(gossipInterval)
+	// }
 }
 
 // Ping : SWIM style dissemination of membership updates

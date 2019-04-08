@@ -4,7 +4,21 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/gob"
+
+	"../shared"
 )
+
+type MergeInfo struct {
+	Balance map[int]int
+	Mempool shared.StringSet
+}
+
+func MakeMergeInfo(balance map[int]int, mempool shared.StringSet) MergeInfo {
+	mergeInfo := new(MergeInfo)
+	mergeInfo.Balance = balance
+	mergeInfo.Mempool = mempool
+	return *mergeInfo
+}
 
 type Block struct {
 	Height            int
