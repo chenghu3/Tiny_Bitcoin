@@ -36,6 +36,7 @@ type Node struct {
 	Balance           map[int]int
 	Mempool           *shared.StringSet
 	TentativeBlock    *blockchain.Block
+	verifyChannel     chan bool
 }
 
 // NewNode : construntor for Node struct
@@ -50,6 +51,7 @@ func NewNode(port string) *Node {
 	node.Balance = make(map[int]int) // TODO: Initialize
 	node.Mempool = shared.NewSet()
 	node.TentativeBlock = blockchain.NewBlock(0, "", make([]string, 0))
+	node.verifyChannel = make(chan bool)
 	return node
 }
 
@@ -98,6 +100,13 @@ func HandleServiceTCPConnection(node *Node, conn net.Conn) {
 			// Gossip Block
 			// TODO
 
+		} else if strings.HasPrefix(rawMsg, "VERIFY") {
+			isSuccess := strings.Split(rawMsg, " ")[1]
+			if isSuccess == "OK" {
+				node.verifyChannel <- true
+			} else {
+				node.verifyChannel <- false
+			}
 		} else {
 			fmt.Println("Unknown message format.")
 		}
@@ -107,6 +116,15 @@ func HandleServiceTCPConnection(node *Node, conn net.Conn) {
 
 func verifyBlock(node *Node, block *blockchain.Block) {
 	// TODO
+	puzzle := block.GetPuzzle()
+	solution := block.PuzzleSolution
+	fmt.Fprintf(*node.ServiceConn, "VERIFY "+puzzle+" "+solution+"\n")
+	ok := <-node.verifyChannel
+	if ok == true {
+		newVerifiedBlockHandler(node, block)
+	} else {
+		return
+	}
 }
 
 // updateBalance : update account balance, reject any transactions that cause the account balance go negative
