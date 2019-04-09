@@ -37,3 +37,6 @@ Go 1.11.4, Python 36
 
 ## TODO:
 1. change introduction server to known server
+2. SwimBatchPuzzleGenerator ?? batch start when sovling a puzzle 
+3. Swith chain, ask for mergeinfo, just send the entire chain since repeted ask is too compliacated
+4. How to gossip

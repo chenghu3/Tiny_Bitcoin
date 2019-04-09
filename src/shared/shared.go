@@ -158,7 +158,7 @@ func NewNode(port string) *Node {
 	node.NewMsgCount = 0
 	node.Balance = make(map[int]int) // TODO: Initialize
 	node.Mempool = NewSet()
-	node.TentativeBlock = NewBlock(0, "", make([]string, 0))
+	node.TentativeBlock = NewBlock(0, "", make([]string, 0), "")
 	node.VerifyChannelMap = make(map[string]chan bool)
 	return node
 }
@@ -313,7 +313,7 @@ func (s Mempool) Less(i, j int) bool {
 
 // Block defination
 type Block struct {
-	randIndentifier   float64 // https://piazza.com/class/jqxvctrwztu5f6?cid=567
+	SourceIP          string // https://piazza.com/class/jqxvctrwztu5f6?cid=567
 	Height            int
 	PreviousBlockHash string // len = 32
 	TransactionList   []string
@@ -321,9 +321,9 @@ type Block struct {
 }
 
 // NewBlock : Blokc constructor
-func NewBlock(height int, previousBlockHash string, transactionList []string) *Block {
+func NewBlock(height int, previousBlockHash string, transactionList []string, sourceIP string) *Block {
 	block := new(Block)
-	block.randIndentifier = rand.Float64()
+	block.SourceIP = sourceIP
 	block.Height = height
 	block.PreviousBlockHash = previousBlockHash
 	block.TransactionList = transactionList

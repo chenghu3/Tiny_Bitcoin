@@ -28,7 +28,8 @@ func VerifyBlock(node *shared.Node, block *shared.Block) bool {
 
 // updateBlockChain : Local update BlockChain, Mempool, Balance, potential handle Switch Chain
 func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
-	localHeight := len(node.BlockChain) - 1
+	// start with 1 now
+	localHeight := len(node.BlockChain)
 	//  if is a local solved block, no need to consider Switch Chain
 	if isLocal || (block.Height == localHeight+1 && node.BlockChain[localHeight].GetBlockHash() == block.PreviousBlockHash) {
 		// Update BlockChain
@@ -92,12 +93,13 @@ func RecievedBlockHandler(node *shared.Node, block *shared.Block) {
 	if block.Height > node.CurrHeight {
 		node.RWlock.RUnlock()
 		node.RWlock.Lock()
-		node.CurrHeight++
+		oldCurrHeight := node.CurrHeight
+		node.CurrHeight = block.Height
 		node.RWlock.Unlock()
 		isVerifySuccess := VerifyBlock(node, block)
 		if !isVerifySuccess {
 			node.RWlock.Lock()
-			node.CurrHeight--
+			node.CurrHeight = oldCurrHeight
 			node.RWlock.Unlock()
 			fmt.Println("Verify Failed!")
 		} else {
@@ -111,7 +113,7 @@ func RecievedBlockHandler(node *shared.Node, block *shared.Block) {
 	}
 }
 
-// SwimBatchPuzzleGenerator : PuzzleGenerator called in SWIM Ping function
+// SwimBatchPuzzleGenerator : PuzzleGenerator called in SWIM Ping function ???
 func SwimBatchPuzzleGenerator(node *shared.Node) {
 	node.RWlock.RLock()
 	if node.NewMsgCount >= batchSize {
@@ -125,7 +127,9 @@ func SwimBatchPuzzleGenerator(node *shared.Node) {
 
 // solve : compute puzzle hash and send it to service
 func solve(node *shared.Node) {
-	height := len(node.BlockChain)
+	node.RWlock.RLock()
+	height := node.CurrHeight
+	node.RWlock.RUnlock()
 	var previousBlockHash string
 	if height == 0 {
 		previousBlockHash = ""
@@ -135,7 +139,9 @@ func solve(node *shared.Node) {
 	sortedMempool := node.Mempool.SetToArray()
 	sort.Sort(shared.Mempool(sortedMempool))
 	sortedMempool = sortedMempool[:2000]
-	block := shared.NewBlock(len(node.BlockChain), previousBlockHash, sortedMempool)
+	localIP := shared.GetLocalIP()
+	SourceIP := localIP + ":" + node.Port
+	block := shared.NewBlock(height+1, previousBlockHash, sortedMempool, SourceIP)
 	node.TentativeBlock = block
 	puzzle := block.GetPuzzle()
 	fmt.Println("Sending SOLVE...")
@@ -148,6 +154,9 @@ func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
 	arr := strings.Split(rawMsg, " ")
 	solution := arr[2]
 	node.TentativeBlock.PuzzleSolution = solution
+	node.RWlock.Lock()
+	node.CurrHeight++
+	node.RWlock.Unlock()
 	// Update BlockChain and Mempool
 	// TODO
 	updateBlockChain(node, node.TentativeBlock, true)
