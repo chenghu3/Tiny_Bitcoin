@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/gob"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"net"
@@ -355,7 +356,8 @@ func (block *Block) GetPuzzle() string {
 	h.Write(b.Bytes())
 	block.PuzzleSolution = oldSolution
 	byteArray := h.Sum(nil)
-	return string(byteArray)
+	puzzle := hex.EncodeToString(byteArray)
+	return puzzle
 }
 
 // GetBlockHash : get the hash value of the block
@@ -368,5 +370,6 @@ func (block *Block) GetBlockHash() string {
 	h := sha256.New()
 	h.Write(b.Bytes())
 	byteArray := h.Sum(nil)
-	return string(byteArray)
+	blockHash := hex.EncodeToString(byteArray)
+	return blockHash
 }

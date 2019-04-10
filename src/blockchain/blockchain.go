@@ -80,7 +80,8 @@ func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 
 	localHeight := len(node.BlockChain)
 	//  if is a local solved block, no need to consider Switch Chain
-	if isLocal || (block.Height == localHeight+1 && node.BlockChain[localHeight].GetBlockHash() == block.PreviousBlockHash) {
+	if isLocal || localHeight == 0 || (block.Height == localHeight+1 && node.BlockChain[localHeight-1].GetBlockHash() == block.PreviousBlockHash) {
+		fmt.Println("UPDATING BLOCK CHAIN")
 		// Update BlockChain
 		node.BlockChain = append(node.BlockChain, *block)
 		// Update Mempool
@@ -91,6 +92,7 @@ func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 	} else {
 		// Switch Chain
 		// TODO: Ask for previous blocks, mempool, balance
+		fmt.Println("SWITCH CHAIN")
 		requestMergeInfo(node, block)
 		remoteAdrr := block.SourceIP
 		conn, err := net.Dial("tcp", remoteAdrr)
@@ -132,6 +134,8 @@ func updateBalance(node *shared.Node, block *shared.Block) {
 			node.Balance[destAccount] += amount
 		}
 	}
+	fmt.Print("BALANCEUPDATE " + node.Port + " SOURCE " + block.SourceIP + " HEIGHT " + strconv.Itoa(block.Height) + " NEWBALANCE ")
+	fmt.Println(node.Balance)
 }
 
 // **************************************** //
@@ -227,13 +231,16 @@ func solve(node *shared.Node) {
 	sortedMempool := node.Mempool.SetToArray()
 	node.RWlock.RUnlock()
 	sort.Sort(shared.Mempool(sortedMempool))
-	sortedMempool = sortedMempool[:2000]
+	if len(sortedMempool) > 2000 {
+		sortedMempool = sortedMempool[:2000]
+	}
 	localIP := shared.GetLocalIP()
 	SourceIP := localIP + ":" + node.Port
 	block := shared.NewBlock(height+1, previousBlockHash, sortedMempool, SourceIP)
 	node.TentativeBlock = block
 	puzzle := block.GetPuzzle()
-	fmt.Println("Sending SOLVE...")
+	fmt.Println("Sending SOLVE: " + "SOLVE " + puzzle + "\n")
+
 	fmt.Fprintf(*node.ServiceConn, "SOLVE "+puzzle+"\n")
 }
 
@@ -252,10 +259,11 @@ func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
 	node.BlockBuffer.Add(node.TentativeBlock)
 
 	fmt.Println("NEWBLOCK " + strconv.Itoa(node.TentativeBlock.Height) + " " + node.TentativeBlock.PreviousBlockHash + " " + node.TentativeBlock.SourceIP)
-	for _, transaction := range node.TentativeBlock.TransactionList {
-		fmt.Println("BLOCKTRANSACTION " + transaction)
-	}
-
+	// for _, transaction := range node.TentativeBlock.TransactionList {
+	// 	fmt.Println("BLOCKTRANSACTION " + transaction)
+	// }
+	fmt.Println("BLOCKTRANSACTION HEAD " + node.TentativeBlock.TransactionList[0])
+	fmt.Println("BLOCKTRANSACTION TAIL " + node.TentativeBlock.TransactionList[len(node.TentativeBlock.TransactionList)-1])
 }
 
 // **************************************** //

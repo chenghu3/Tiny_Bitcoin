@@ -195,6 +195,8 @@ func sendGossipingMsg(node *shared.Node, header string, round int, mesg string) 
 // Ping : SWIM style dissemination of membership updates
 func Ping(node *shared.Node) {
 	for {
+		blockchain.SwimBatchPuzzleGenerator(node)
+
 		time.Sleep(pingInterval)
 		target := node.MembersSet.GetRandom()
 		if target == "" {
@@ -225,8 +227,6 @@ func Ping(node *shared.Node) {
 			for _, block := range node.BlockBuffer.GetAll() {
 				blockchain.SendBlock(node, conn, block)
 			}
-
-			blockchain.SwimBatchPuzzleGenerator(node)
 
 			conn.Close()
 		}
