@@ -141,13 +141,13 @@ func requestMergeInfo(node *shared.Node, block *shared.Block) {
 	dec := gob.NewDecoder(conn)
 	m := &shared.MergeInfo{}
 	dec.Decode(m)
-	if len(m.Balance) != 0 {
-		fmt.Println("Mergeinfo request success")
+	if len(m.Balance) == 0 {
+		fmt.Println("Mergeinfo request Fail!!")
 	}
 	// lock node when update
+	mempoolSet := shared.ArrayToSet(m.Mempool)
 	node.RWlock.Lock()
 	node.Balance = m.Balance
-	mempoolSet := shared.ArrayToSet(m.Mempool)
 	node.Mempool = mempoolSet
 	node.RWlock.Unlock()
 	conn.Close()
@@ -166,8 +166,8 @@ func requestBlock(node *shared.Node, block *shared.Block, height int) {
 	dec := gob.NewDecoder(conn)
 	b := &shared.Block{}
 	dec.Decode(b)
-	if len(b.TransactionList) != 0 {
-		fmt.Println("Block request success")
+	if len(b.TransactionList) == 0 {
+		fmt.Println("Block request Fail!!")
 	}
 	// TODO: further request logic check
 }
