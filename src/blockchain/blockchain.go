@@ -73,6 +73,11 @@ func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 	// start with 1 now
 	node.RWlock.Lock()
 	defer node.RWlock.Unlock()
+
+	if !isLocal {
+		fmt.Println("RECEIVENEWBLOCK " + strconv.Itoa(block.Height) + " " + block.PreviousBlockHash + " " + block.SourceIP)
+	}
+
 	localHeight := len(node.BlockChain)
 	//  if is a local solved block, no need to consider Switch Chain
 	if isLocal || (block.Height == localHeight+1 && node.BlockChain[localHeight].GetBlockHash() == block.PreviousBlockHash) {
@@ -245,6 +250,12 @@ func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
 	updateBlockChain(node, node.TentativeBlock, true)
 	// Gossip Block
 	node.BlockBuffer.Add(node.TentativeBlock)
+
+	fmt.Println("NEWBLOCK " + strconv.Itoa(node.TentativeBlock.Height) + " " + node.TentativeBlock.PreviousBlockHash + " " + node.TentativeBlock.SourceIP)
+	for _, transaction := range node.TentativeBlock.TransactionList {
+		fmt.Println("BLOCKTRANSACTION " + transaction)
+	}
+
 }
 
 // **************************************** //
