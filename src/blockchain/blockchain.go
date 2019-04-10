@@ -120,6 +120,9 @@ func HandleMergeInfoRequst(node *shared.Node, conn net.Conn) {
 // HandleBlockRequst : Gossip server handle Block request
 func HandleBlockRequst(node *shared.Node, conn net.Conn, requestMesg string) {
 	requestHeight, _ := strconv.Atoi(strings.Split(requestMesg, " ")[1])
+	if requestHeight == 0 {
+		fmt.Println("requestHeight is 0, consider check")
+	}
 	encoder := gob.NewEncoder(conn)
 	targetBlock := node.BlockChain[requestHeight-1]
 	encoder.Encode(targetBlock)
@@ -158,7 +161,7 @@ func requestBlock(node *shared.Node, block *shared.Block, height int) {
 		log.Fatal("dialing:", err)
 	}
 	// Request header
-	fmt.Fprintf(conn, "RequestBlock "+strconv.Itoa(height)+"\n")
+	fmt.Fprintf(conn, "RequestBlock "+strconv.Itoa(height)+" \n")
 	// Wait for peer response
 	dec := gob.NewDecoder(conn)
 	b := &shared.Block{}
