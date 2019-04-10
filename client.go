@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"./src/gossip"
+	"./src/shared"
 )
 
 func main() {
