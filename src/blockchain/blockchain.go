@@ -48,9 +48,6 @@ func RecievedBlockHandler(node *shared.Node, block *shared.Block) {
 			node.RWlock.Unlock()
 			fmt.Println("Verify Failed!")
 		} else {
-			// 1. TODO gossip block
-			// go SendBlock(node, block)
-			// Add block to buffer for gossip
 			node.BlockBuffer.Add(block)
 			// 2. update blockchain, mempool acoount
 			go updateBlockChain(node, block, false)
@@ -62,7 +59,6 @@ func RecievedBlockHandler(node *shared.Node, block *shared.Block) {
 
 // verifyBlock : check the integrity of the recieved block
 func verifyBlock(node *shared.Node, block *shared.Block) bool {
-	// TODO
 	puzzle := block.GetPuzzle()
 	solution := block.PuzzleSolution
 	fmt.Fprintf(*node.ServiceConn, "VERIFY "+puzzle+" "+solution+"\n")
@@ -75,13 +71,14 @@ func verifyBlock(node *shared.Node, block *shared.Block) bool {
 // updateBlockChain : Local update BlockChain, Mempool, Balance, potential handle Switch Chain
 func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 	// start with 1 now
+	node.RWlock.Lock()
+	defer node.RWlock.Unlock()
 	localHeight := len(node.BlockChain)
 	//  if is a local solved block, no need to consider Switch Chain
 	if isLocal || (block.Height == localHeight+1 && node.BlockChain[localHeight].GetBlockHash() == block.PreviousBlockHash) {
 		// Update BlockChain
 		node.BlockChain = append(node.BlockChain, *block)
 		// Update Mempool
-		// TODO: Add write lock
 		for _, transaction := range block.TransactionList {
 			node.Mempool.SetDelete(transaction)
 		}
@@ -89,13 +86,30 @@ func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 	} else {
 		// Switch Chain
 		// TODO: Ask for previous blocks, mempool, balance
+		requestMergeInfo(node, block)
 		remoteAdrr := block.SourceIP
 		conn, err := net.Dial("tcp", remoteAdrr)
 		if err != nil {
 			fmt.Println("Dial error in requestBlock.")
 			log.Fatal("dialing:", err)
 		}
-		requestBlock(conn, 2)
+		if block.Height > localHeight+1 {
+			for i := localHeight + 1; i < block.Height; i++ {
+				targetBlock := requestBlock(conn, i)
+				node.BlockChain = append(node.BlockChain, *targetBlock)
+			}
+		}
+		node.BlockChain = append(node.BlockChain, *block)
+		currIdx := localHeight
+		for {
+			if currIdx >= 1 && node.BlockChain[currIdx-1].GetBlockHash() != node.BlockChain[currIdx].PreviousBlockHash {
+				newBlock := requestBlock(conn, node.BlockChain[currIdx-1].Height)
+				node.BlockChain[currIdx-1] = *newBlock
+				currIdx--
+			} else {
+				break
+			}
+		}
 	}
 }
 
@@ -164,7 +178,7 @@ func requestMergeInfo(node *shared.Node, block *shared.Block) {
 	conn.Close()
 }
 
-func requestBlock(conn net.Conn, height int) {
+func requestBlock(conn net.Conn, height int) *shared.Block {
 	// Request header
 	fmt.Fprintf(conn, "RequestBlock "+strconv.Itoa(height)+" \n")
 	// Wait for peer response
@@ -174,7 +188,7 @@ func requestBlock(conn net.Conn, height int) {
 	if len(b.TransactionList) == 0 {
 		fmt.Println("Block request Fail!!")
 	}
-	// TODO: further request logic check
+	return b
 }
 
 // **************************************** //
@@ -204,8 +218,9 @@ func solve(node *shared.Node) {
 	} else {
 		previousBlockHash = node.BlockChain[height-1].GetBlockHash()
 	}
-	// TODO: Add read lock
+	node.RWlock.RLock()
 	sortedMempool := node.Mempool.SetToArray()
+	node.RWlock.RUnlock()
 	sort.Sort(shared.Mempool(sortedMempool))
 	sortedMempool = sortedMempool[:2000]
 	localIP := shared.GetLocalIP()
@@ -227,7 +242,6 @@ func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
 	node.CurrHeight++
 	node.RWlock.Unlock()
 	// Update BlockChain and Mempool
-	// TODO
 	updateBlockChain(node, node.TentativeBlock, true)
 	// Gossip Block
 	node.BlockBuffer.Add(node.TentativeBlock)
