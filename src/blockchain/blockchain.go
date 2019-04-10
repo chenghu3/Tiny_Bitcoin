@@ -40,7 +40,7 @@ func RecievedBlockHandler(node *shared.Node, block *shared.Block) {
 		oldCurrHeight := node.CurrHeight
 		node.CurrHeight = block.Height
 		node.RWlock.Unlock()
-		isVerifySuccess := VerifyBlock(node, block)
+		isVerifySuccess := verifyBlock(node, block)
 		if !isVerifySuccess {
 			node.RWlock.Lock()
 			node.CurrHeight = oldCurrHeight
@@ -57,8 +57,8 @@ func RecievedBlockHandler(node *shared.Node, block *shared.Block) {
 	}
 }
 
-// VerifyBlock : check the integrity of the recieved block
-func VerifyBlock(node *shared.Node, block *shared.Block) bool {
+// verifyBlock : check the integrity of the recieved block
+func verifyBlock(node *shared.Node, block *shared.Block) bool {
 	// TODO
 	puzzle := block.GetPuzzle()
 	solution := block.PuzzleSolution
@@ -78,6 +78,7 @@ func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 		// Update BlockChain
 		node.BlockChain = append(node.BlockChain, *block)
 		// Update Mempool
+		// TODO: Add write lock
 		for _, transaction := range block.TransactionList {
 			node.Mempool.SetDelete(transaction)
 		}
@@ -85,6 +86,13 @@ func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 	} else {
 		// Switch Chain
 		// TODO: Ask for previous blocks, mempool, balance
+		remoteAdrr := block.SourceIP
+		conn, err := net.Dial("tcp", remoteAdrr)
+		if err != nil {
+			fmt.Println("Dial error in requestBlock.")
+			log.Fatal("dialing:", err)
+		}
+		requestBlock(conn, 2)
 	}
 }
 
@@ -153,13 +161,7 @@ func requestMergeInfo(node *shared.Node, block *shared.Block) {
 	conn.Close()
 }
 
-func requestBlock(node *shared.Node, block *shared.Block, height int) {
-	remoteAdrr := block.SourceIP
-	conn, err := net.Dial("tcp", remoteAdrr)
-	if err != nil {
-		fmt.Println("Dial error in requestBlock.")
-		log.Fatal("dialing:", err)
-	}
+func requestBlock(conn net.Conn, height int) {
 	// Request header
 	fmt.Fprintf(conn, "RequestBlock "+strconv.Itoa(height)+" \n")
 	// Wait for peer response
@@ -178,13 +180,13 @@ func requestBlock(node *shared.Node, block *shared.Block, height int) {
 
 // SwimBatchPuzzleGenerator : PuzzleGenerator called in SWIM Ping function ???
 func SwimBatchPuzzleGenerator(node *shared.Node) {
-	node.RWlock.RLock()
+	node.RWlock.Lock()
 	if node.NewMsgCount >= batchSize {
-		node.RWlock.RUnlock()
-		solve(node)
 		node.NewMsgCount = 0
+		node.RWlock.Unlock()
+		solve(node)
 	} else {
-		node.RWlock.RUnlock()
+		node.RWlock.Unlock()
 	}
 }
 
@@ -199,6 +201,7 @@ func solve(node *shared.Node) {
 	} else {
 		previousBlockHash = node.BlockChain[height-1].GetBlockHash()
 	}
+	// TODO: Add read lock
 	sortedMempool := node.Mempool.SetToArray()
 	sort.Sort(shared.Mempool(sortedMempool))
 	sortedMempool = sortedMempool[:2000]
