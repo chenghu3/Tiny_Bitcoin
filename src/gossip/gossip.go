@@ -141,6 +141,10 @@ func handleGossipTCPConnection(node *shared.Node, conn net.Conn) {
 		} else if strings.HasPrefix(gossipRawMsg, "BLOCK") {
 			block := blockchain.ReadBlock(reader)
 			go blockchain.RecievedBlockHandler(node, block)
+		} else if strings.HasPrefix(gossipRawMsg, "RequestMergeInfo") {
+			blockchain.HandleMergeInfoRequst(node, conn)
+		} else if strings.HasPrefix(gossipRawMsg, "RequestBlock") {
+			blockchain.HandleBlockRequst(node, conn, gossipRawMsg)
 		} else {
 			fmt.Print("Unknown gossip message format:")
 			fmt.Println(gossipRawMsg)

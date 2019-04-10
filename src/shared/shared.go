@@ -15,11 +15,11 @@ import (
 // MergeInfo : helper struct for switch chain
 type MergeInfo struct {
 	Balance map[int]int
-	Mempool StringSet
+	Mempool []string
 }
 
 // MakeMergeInfo : constructor for MergeInfo
-func MakeMergeInfo(balance map[int]int, mempool StringSet) MergeInfo {
+func MakeMergeInfo(balance map[int]int, mempool []string) MergeInfo {
 	mergeInfo := new(MergeInfo)
 	mergeInfo.Balance = balance
 	mergeInfo.Mempool = mempool
@@ -284,6 +284,15 @@ func GetLocalIP() string {
 		}
 	}
 	return ""
+}
+
+// ArrayToSet : helper function transfer array to stringSet
+func ArrayToSet(input []string) *StringSet {
+	set := NewSet()
+	for _, v := range input {
+		set.SetAdd(v)
+	}
+	return set
 }
 
 // **************************************** //

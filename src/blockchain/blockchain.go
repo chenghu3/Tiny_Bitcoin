@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/gob"
 	"fmt"
+	"log"
 	"net"
 	"sort"
 	"strconv"
@@ -13,6 +14,48 @@ import (
 )
 
 const batchSize = 300
+
+// **************************************** //
+// *****  Recieve Block Handle *********** //
+// *************************************** //
+
+// ReadBlock : Read block use gob
+func ReadBlock(reader *bufio.Reader) *shared.Block {
+	decoder := gob.NewDecoder(reader)
+	block := &shared.Block{}
+	err := decoder.Decode(block)
+	if err != nil {
+		fmt.Println("Read Block Error:", err)
+	}
+	fmt.Println("Decoded Block with previous hash: " + block.PreviousBlockHash)
+	return block
+}
+
+// RecievedBlockHandler : Handle recieved Block through gossip protocal
+func RecievedBlockHandler(node *shared.Node, block *shared.Block) {
+	node.RWlock.RLock()
+	if block.Height > node.CurrHeight {
+		node.RWlock.RUnlock()
+		node.RWlock.Lock()
+		oldCurrHeight := node.CurrHeight
+		node.CurrHeight = block.Height
+		node.RWlock.Unlock()
+		isVerifySuccess := VerifyBlock(node, block)
+		if !isVerifySuccess {
+			node.RWlock.Lock()
+			node.CurrHeight = oldCurrHeight
+			node.RWlock.Unlock()
+			fmt.Println("Verify Failed!")
+		} else {
+			// 1. TODO gossip block
+			go SendBlock(node, block)
+			// 2. update blockchain, mempool acoount
+			go updateBlockChain(node, block, false)
+		}
+	} else {
+		node.RWlock.RUnlock()
+	}
+}
 
 // VerifyBlock : check the integrity of the recieved block
 func VerifyBlock(node *shared.Node, block *shared.Block) bool {
@@ -61,57 +104,74 @@ func updateBalance(node *shared.Node, block *shared.Block) {
 	}
 }
 
-// SendBlock : One time send block
-func SendBlock(node *shared.Node, block *shared.Block) {
-	target := node.MembersSet.GetRandom()
-	targetPeer := strings.Split(target, " ")
-	ip := targetPeer[0]
-	port := targetPeer[1]
-	conn, _ := net.Dial("tcp", ip+":"+port)
+// **************************************** //
+// *******  Swith Chain Handle *********** //
+// *************************************** //
+
+// HandleMergeInfoRequst : Gossip server handle mergeInfor request
+func HandleMergeInfoRequst(node *shared.Node, conn net.Conn) {
 	encoder := gob.NewEncoder(conn)
-	// send gossipMesg to peer
-	gossipMesg := "BLOCK\n"
-	fmt.Fprintf(conn, gossipMesg)
-	encoder.Encode(*block)
+	balance := node.Balance
+	pool := node.Mempool.SetToArray()
+	merge := shared.MakeMergeInfo(balance, pool)
+	encoder.Encode(merge)
 }
 
-// ReadBlock : Read block use gob
-func ReadBlock(reader *bufio.Reader) *shared.Block {
-	decoder := gob.NewDecoder(reader)
-	block := &shared.Block{}
-	err := decoder.Decode(block)
+// HandleBlockRequst : Gossip server handle Block request
+func HandleBlockRequst(node *shared.Node, conn net.Conn, requestMesg string) {
+	requestHeight, _ := strconv.Atoi(strings.Split(requestMesg, " ")[1])
+	encoder := gob.NewEncoder(conn)
+	targetBlock := node.BlockChain[requestHeight-1]
+	encoder.Encode(targetBlock)
+}
+
+func requestMergeInfo(node *shared.Node, block *shared.Block) {
+	remoteAdrr := block.SourceIP
+	conn, err := net.Dial("tcp", remoteAdrr)
 	if err != nil {
-		fmt.Println("Read Block Error:", err)
+		fmt.Println("Dial error in requestMergeInfo.")
+		log.Fatal("dialing:", err)
 	}
-	fmt.Println("Decoded Block with previous hash: " + block.PreviousBlockHash)
-	return block
+	// Request header
+	fmt.Fprintf(conn, "RequestMergeInfo\n")
+	// Wait for peer response
+	dec := gob.NewDecoder(conn)
+	m := &shared.MergeInfo{}
+	dec.Decode(m)
+	if len(m.Balance) != 0 {
+		fmt.Println("Mergeinfo request success")
+	}
+	// lock node when update
+	node.RWlock.Lock()
+	node.Balance = m.Balance
+	mempoolSet := shared.ArrayToSet(m.Mempool)
+	node.Mempool = mempoolSet
+	node.RWlock.Unlock()
+	conn.Close()
 }
 
-// RecievedBlockHandler : Handle recieved Block through gossip protocal
-func RecievedBlockHandler(node *shared.Node, block *shared.Block) {
-	node.RWlock.RLock()
-	if block.Height > node.CurrHeight {
-		node.RWlock.RUnlock()
-		node.RWlock.Lock()
-		oldCurrHeight := node.CurrHeight
-		node.CurrHeight = block.Height
-		node.RWlock.Unlock()
-		isVerifySuccess := VerifyBlock(node, block)
-		if !isVerifySuccess {
-			node.RWlock.Lock()
-			node.CurrHeight = oldCurrHeight
-			node.RWlock.Unlock()
-			fmt.Println("Verify Failed!")
-		} else {
-			// 1. TODO gossip block
-			go SendBlock(node, block)
-			// 2. update blockchain, mempool acoount
-			go updateBlockChain(node, block, false)
-		}
-	} else {
-		node.RWlock.RUnlock()
+func requestBlock(node *shared.Node, block *shared.Block, height int) {
+	remoteAdrr := block.SourceIP
+	conn, err := net.Dial("tcp", remoteAdrr)
+	if err != nil {
+		fmt.Println("Dial error in requestBlock.")
+		log.Fatal("dialing:", err)
 	}
+	// Request header
+	fmt.Fprintf(conn, "RequestBlock "+strconv.Itoa(height)+"\n")
+	// Wait for peer response
+	dec := gob.NewDecoder(conn)
+	b := &shared.Block{}
+	dec.Decode(b)
+	if len(b.TransactionList) != 0 {
+		fmt.Println("Block request success")
+	}
+	// TODO: further request logic check
 }
+
+// **************************************** //
+// *******  Slove Block Handle *********** //
+// *************************************** //
 
 // SwimBatchPuzzleGenerator : PuzzleGenerator called in SWIM Ping function ???
 func SwimBatchPuzzleGenerator(node *shared.Node) {
@@ -162,4 +222,22 @@ func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
 	updateBlockChain(node, node.TentativeBlock, true)
 	// Gossip Block
 	// TODO
+}
+
+// **************************************** //
+// ****** Block Gossip functions ********* //
+// *************************************** //
+
+// SendBlock : One time send block
+func SendBlock(node *shared.Node, block *shared.Block) {
+	target := node.MembersSet.GetRandom()
+	targetPeer := strings.Split(target, " ")
+	ip := targetPeer[0]
+	port := targetPeer[1]
+	conn, _ := net.Dial("tcp", ip+":"+port)
+	encoder := gob.NewEncoder(conn)
+	// send gossipMesg to peer
+	gossipMesg := "BLOCK\n"
+	fmt.Fprintf(conn, gossipMesg)
+	encoder.Encode(*block)
 }
