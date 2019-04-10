@@ -222,6 +222,9 @@ func Ping(node *shared.Node) {
 			transactionsMsg := strings.Join(node.TransactionBuffer.GetN(10000), "\n") + "\n"
 			logBandwithInfo("Send", len(transactionsMsg))
 			fmt.Fprintf(conn, transactionsMsg)
+			for _, block := range node.BlockBuffer.GetAll() {
+				blockchain.SendBlock(node, conn, block)
+			}
 
 			blockchain.SwimBatchPuzzleGenerator(node)
 

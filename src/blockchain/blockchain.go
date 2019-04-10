@@ -42,13 +42,16 @@ func RecievedBlockHandler(node *shared.Node, block *shared.Block) {
 		node.RWlock.Unlock()
 		isVerifySuccess := verifyBlock(node, block)
 		if !isVerifySuccess {
+			// This should never happen
 			node.RWlock.Lock()
 			node.CurrHeight = oldCurrHeight
 			node.RWlock.Unlock()
 			fmt.Println("Verify Failed!")
 		} else {
 			// 1. TODO gossip block
-			go SendBlock(node, block)
+			// go SendBlock(node, block)
+			// Add block to buffer for gossip
+			node.BlockBuffer.Add(block)
 			// 2. update blockchain, mempool acoount
 			go updateBlockChain(node, block, false)
 		}
@@ -227,7 +230,7 @@ func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
 	// TODO
 	updateBlockChain(node, node.TentativeBlock, true)
 	// Gossip Block
-	// TODO
+	node.BlockBuffer.Add(node.TentativeBlock)
 }
 
 // **************************************** //
@@ -235,12 +238,12 @@ func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
 // *************************************** //
 
 // SendBlock : One time send block
-func SendBlock(node *shared.Node, block *shared.Block) {
-	target := node.MembersSet.GetRandom()
-	targetPeer := strings.Split(target, " ")
-	ip := targetPeer[0]
-	port := targetPeer[1]
-	conn, _ := net.Dial("tcp", ip+":"+port)
+func SendBlock(node *shared.Node, conn net.Conn, block *shared.Block) {
+	// target := node.MembersSet.GetRandom()
+	// targetPeer := strings.Split(target, " ")
+	// ip := targetPeer[0]
+	// port := targetPeer[1]
+	// conn, _ := net.Dial("tcp", ip+":"+port)
 	encoder := gob.NewEncoder(conn)
 	// send gossipMesg to peer
 	gossipMesg := "BLOCK\n"

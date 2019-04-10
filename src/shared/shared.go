@@ -143,6 +143,7 @@ type Node struct {
 	Mempool           *StringSet
 	TentativeBlock    *Block
 	VerifyChannelMap  map[string]chan bool
+	BlockBuffer       *BlockBuffer
 	RWlock            sync.RWMutex
 }
 
@@ -160,6 +161,7 @@ func NewNode(port string) *Node {
 	node.Mempool = NewSet()
 	node.TentativeBlock = NewBlock(0, "", make([]string, 0), "")
 	node.VerifyChannelMap = make(map[string]chan bool)
+	node.BlockBuffer = NewBlockBuffer(20)
 	return node
 }
 
