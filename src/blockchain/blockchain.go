@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"../shared"
 )
@@ -75,7 +76,7 @@ func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 	defer node.RWlock.Unlock()
 
 	if !isLocal {
-		fmt.Println("RECEIVENEWBLOCK " + strconv.Itoa(block.Height) + " " + block.PreviousBlockHash + " " + block.SourceIP)
+		fmt.Println("RECEIVENEWBLOCK " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + strconv.Itoa(block.Height) + " " + block.PreviousBlockHash + " " + block.SourceIP)
 	}
 
 	localHeight := len(node.BlockChain)
@@ -258,7 +259,7 @@ func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
 	// Gossip Block
 	node.BlockBuffer.Add(node.TentativeBlock)
 
-	fmt.Println("NEWBLOCK " + strconv.Itoa(node.TentativeBlock.Height) + " " + node.TentativeBlock.PreviousBlockHash + " " + node.TentativeBlock.SourceIP)
+	fmt.Println("NEWBLOCK " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + strconv.Itoa(node.TentativeBlock.Height) + " " + node.TentativeBlock.PreviousBlockHash + " " + node.TentativeBlock.SourceIP)
 	// for _, transaction := range node.TentativeBlock.TransactionList {
 	// 	fmt.Println("BLOCKTRANSACTION " + transaction)
 	// }
