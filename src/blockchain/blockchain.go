@@ -229,7 +229,7 @@ func SwimBatchPuzzleGenerator(node *shared.Node) {
 // solve : compute puzzle hash and send it to service
 func solve(node *shared.Node) {
 	node.RWlock.Lock()
-	height := node.CurrHeight
+	height := len(node.BlockChain)
 	var previousBlockHash string
 	if height == 0 {
 		previousBlockHash = ""
