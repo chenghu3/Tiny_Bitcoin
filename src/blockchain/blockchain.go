@@ -86,7 +86,9 @@ func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 
 	localHeight := len(node.BlockChain)
 	//  if is a local solved block, no need to consider Switch Chain
-	if isLocal || localHeight == 0 || (block.Height == localHeight+1 && node.BlockChain[localHeight-1].GetBlockHash() == block.PreviousBlockHash) {
+	if isLocal ||
+		localHeight == 0 && block.Height == 1 || // is first block
+		(localHeight != 0 && block.Height == localHeight+1 && node.BlockChain[localHeight-1].GetBlockHash() == block.PreviousBlockHash) {
 		fmt.Println("UPDATING BLOCK CHAIN")
 		// Update BlockChain
 		node.BlockChain = append(node.BlockChain, *block)
@@ -107,10 +109,12 @@ func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 			fmt.Println("Dial error in requestBlock.")
 			log.Fatal("dialing:", err)
 		}
+		fmt.Println("Current block chain len ", len(node.BlockChain))
 		fmt.Println("Current lasted block is Height " + strconv.Itoa(node.BlockChain[localHeight-1].Height) + " " + node.BlockChain[localHeight-1].SourceIP)
 		if block.Height > localHeight+1 {
 			for i := localHeight + 1; i < block.Height; i++ {
 				targetBlock := requestBlock(conn, i)
+				fmt.Println("RECEIVENEWBLOCK " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + strconv.Itoa(targetBlock.Height) + " " + targetBlock.PreviousBlockHash + " " + targetBlock.SourceIP)
 				node.BlockChain = append(node.BlockChain, *targetBlock)
 			}
 		}
@@ -210,7 +214,6 @@ func requestBlock(conn net.Conn, height int) *shared.Block {
 	}
 	logBandwithInfo("Recieve", b.GetBlockSize())
 	fmt.Println("Request Block : Height " + strconv.Itoa(b.Height) + " " + b.SourceIP)
-	fmt.Println("RECEIVENEWBLOCK " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + strconv.Itoa(b.Height) + " " + b.PreviousBlockHash + " " + b.SourceIP)
 	return b
 }
 
