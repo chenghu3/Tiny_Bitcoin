@@ -261,7 +261,7 @@ func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
 
 	fmt.Println("NEWBLOCK " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + strconv.Itoa(node.TentativeBlock.Height) + " " + node.TentativeBlock.PreviousBlockHash + " " + node.TentativeBlock.SourceIP)
 	for _, transaction := range node.TentativeBlock.TransactionList {
-		fmt.Println("BLOCKTRANSACTION " + transaction)
+		fmt.Println("BLOCKTRANSACTION " + strconv.Itoa(node.TentativeBlock.Height) + " " + node.TentativeBlock.SourceIP + " " + transaction)
 	}
 	// fmt.Println("BLOCKTRANSACTION HEAD " + node.TentativeBlock.TransactionList[0])
 	// fmt.Println("BLOCKTRANSACTION TAIL " + node.TentativeBlock.TransactionList[len(node.TentativeBlock.TransactionList)-1])
