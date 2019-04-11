@@ -207,6 +207,7 @@ func requestBlock(conn net.Conn, height int) *shared.Block {
 	}
 	logBandwithInfo("Recieve", b.GetBlockSize())
 	fmt.Println("Request Block : Height " + strconv.Itoa(b.Height) + " " + b.SourceIP)
+	fmt.Println("RECEIVENEWBLOCK " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + strconv.Itoa(b.Height) + " " + b.PreviousBlockHash + " " + b.SourceIP)
 	return b
 }
 
@@ -260,17 +261,16 @@ func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
 	solution := arr[2]
 	node.TentativeBlock.PuzzleSolution = solution
 	node.RWlock.Lock()
-	node.CurrHeight++
-	node.RWlock.Unlock()
-	// Update BlockChain and Mempool
-	updateBlockChain(node, node.TentativeBlock, true)
-	// Gossip Block
-	node.BlockBuffer.Add(node.TentativeBlock)
-
-	fmt.Println("NEWBLOCK " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + strconv.Itoa(node.TentativeBlock.Height) + " " + node.TentativeBlock.PreviousBlockHash + " " + node.TentativeBlock.SourceIP)
-	for _, transaction := range node.TentativeBlock.TransactionList {
-		fmt.Println("BLOCKTRANSACTION " + strconv.Itoa(node.TentativeBlock.Height) + " " + node.TentativeBlock.SourceIP + " " + transaction)
+	if node.CurrHeight < node.TentativeBlock.Height {
+		node.CurrHeight++
+		// Update BlockChain and Mempool
+		updateBlockChain(node, node.TentativeBlock, true)
+		fmt.Println("NEWBLOCK " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + strconv.Itoa(node.TentativeBlock.Height) + " " + node.TentativeBlock.PreviousBlockHash + " " + node.TentativeBlock.SourceIP)
+		for _, transaction := range node.TentativeBlock.TransactionList {
+			fmt.Println("BLOCKTRANSACTION " + strconv.Itoa(node.TentativeBlock.Height) + " " + node.TentativeBlock.SourceIP + " " + transaction)
+		}
 	}
+	node.RWlock.Unlock()
 	// fmt.Println("BLOCKTRANSACTION HEAD " + node.TentativeBlock.TransactionList[0])
 	// fmt.Println("BLOCKTRANSACTION TAIL " + node.TentativeBlock.TransactionList[len(node.TentativeBlock.TransactionList)-1])
 }
