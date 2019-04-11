@@ -97,12 +97,14 @@ func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 		// TODO: Ask for previous blocks, mempool, balance
 		fmt.Println("SWITCH CHAIN")
 		requestMergeInfo(node, block)
+		fmt.Println("Request mergeInfo from " + block.SourceIP)
 		remoteAdrr := block.SourceIP
 		conn, err := net.Dial("tcp", remoteAdrr)
 		if err != nil {
 			fmt.Println("Dial error in requestBlock.")
 			log.Fatal("dialing:", err)
 		}
+		fmt.Println("Current lasted block is Height " + strconv.Itoa(node.BlockChain[localHeight-1].Height) + " " + node.BlockChain[localHeight-1].SourceIP)
 		if block.Height > localHeight+1 {
 			for i := localHeight + 1; i < block.Height; i++ {
 				targetBlock := requestBlock(conn, i)
@@ -187,10 +189,8 @@ func requestMergeInfo(node *shared.Node, block *shared.Block) {
 	logBandwithInfo("Recieve", m.GetSize())
 	// lock node when update
 	mempoolSet := shared.ArrayToSet(m.Mempool)
-	node.RWlock.Lock()
 	node.Balance = m.Balance
 	node.Mempool = mempoolSet
-	node.RWlock.Unlock()
 	conn.Close()
 }
 
@@ -206,6 +206,7 @@ func requestBlock(conn net.Conn, height int) *shared.Block {
 		fmt.Println("Block request Fail!!")
 	}
 	logBandwithInfo("Recieve", b.GetBlockSize())
+	fmt.Println("Request Block : Height " + strconv.Itoa(b.Height) + " " + b.SourceIP)
 	return b
 }
 
