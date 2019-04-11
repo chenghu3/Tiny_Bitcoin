@@ -50,9 +50,12 @@ func RecievedBlockHandler(node *shared.Node, block *shared.Block) {
 			node.RWlock.Unlock()
 			fmt.Println("Verify Failed!")
 		} else {
+			node.RWlock.Lock()
 			node.BlockBuffer.Add(block)
 			// 2. update blockchain, mempool acoount
-			go updateBlockChain(node, block, false)
+			// go updateBlockChain(node, block, false)
+			updateBlockChain(node, block, false)
+			node.RWlock.Unlock()
 		}
 	} else {
 		node.RWlock.RUnlock()
@@ -74,8 +77,8 @@ func verifyBlock(node *shared.Node, block *shared.Block) bool {
 // updateBlockChain : Local update BlockChain, Mempool, Balance, potential handle Switch Chain
 func updateBlockChain(node *shared.Node, block *shared.Block, isLocal bool) {
 	// start with 1 now
-	node.RWlock.Lock()
-	defer node.RWlock.Unlock()
+	// node.RWlock.Lock()
+	// defer node.RWlock.Unlock()
 
 	if !isLocal {
 		fmt.Println("RECEIVENEWBLOCK " + time.Now().Format("2006-01-02 15:04:05.000000") + " " + strconv.Itoa(block.Height) + " " + block.PreviousBlockHash + " " + block.SourceIP)
