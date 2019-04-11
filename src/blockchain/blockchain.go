@@ -228,18 +228,15 @@ func SwimBatchPuzzleGenerator(node *shared.Node) {
 
 // solve : compute puzzle hash and send it to service
 func solve(node *shared.Node) {
-	node.RWlock.RLock()
+	node.RWlock.Lock()
 	height := node.CurrHeight
-	node.RWlock.RUnlock()
 	var previousBlockHash string
 	if height == 0 {
 		previousBlockHash = ""
 	} else {
 		previousBlockHash = node.BlockChain[height-1].GetBlockHash()
 	}
-	node.RWlock.RLock()
 	sortedMempool := node.Mempool.SetToArray()
-	node.RWlock.RUnlock()
 	sort.Sort(shared.Mempool(sortedMempool))
 	if len(sortedMempool) > 2000 {
 		sortedMempool = sortedMempool[:2000]
@@ -253,6 +250,7 @@ func solve(node *shared.Node) {
 
 	fmt.Fprintf(*node.ServiceConn, "SOLVE "+puzzle+"\n")
 	logBandwithInfo("Send", len("SOLVE "+puzzle+"\n"))
+	node.RWlock.Unlock()
 }
 
 // PuzzleSolvedHandler : handle TentativeBlock once recieve SOLVED from service
