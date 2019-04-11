@@ -27,6 +27,16 @@ func MakeMergeInfo(balance map[int]int, mempool []string) MergeInfo {
 	return *mergeInfo
 }
 
+// GetSize : get the byte size of the MergeInfo
+func (merge MergeInfo) GetSize() int {
+	count := 0
+	for _, v := range merge.Mempool {
+		count += len(v)
+	}
+	count += len(merge.Balance) * 16
+	return count
+}
+
 // BlockBuffer : A buffer that keeps a read counter for each block
 type BlockBuffer struct {
 	blocks   map[*Block]int
@@ -372,4 +382,16 @@ func (block *Block) GetBlockHash() string {
 	byteArray := h.Sum(nil)
 	blockHash := hex.EncodeToString(byteArray)
 	return blockHash
+}
+
+// GetBlockSize : get the byte size of the block
+func (block *Block) GetBlockSize() int {
+	count := 8
+	count += len(block.SourceIP)
+	count += len(block.PreviousBlockHash)
+	count += len(block.PuzzleSolution)
+	for _, v := range block.TransactionList {
+		count += len(v)
+	}
+	return count
 }

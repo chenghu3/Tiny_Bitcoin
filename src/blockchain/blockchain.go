@@ -25,6 +25,7 @@ func ReadBlock(reader *bufio.Reader) *shared.Block {
 	decoder := gob.NewDecoder(reader)
 	block := &shared.Block{}
 	err := decoder.Decode(block)
+	logBandwithInfo("Recieve", block.GetBlockSize())
 	if err != nil {
 		fmt.Println("Read Block Error:", err)
 	}
@@ -63,6 +64,7 @@ func verifyBlock(node *shared.Node, block *shared.Block) bool {
 	puzzle := block.GetPuzzle()
 	solution := block.PuzzleSolution
 	fmt.Fprintf(*node.ServiceConn, "VERIFY "+puzzle+" "+solution+"\n")
+	logBandwithInfo("Send", len("VERIFY "+puzzle+" "+solution+"\n"))
 	verifyChan := make(chan bool)
 	node.VerifyChannelMap[puzzle] = verifyChan
 	ok := <-verifyChan
@@ -150,6 +152,7 @@ func HandleMergeInfoRequst(node *shared.Node, conn net.Conn) {
 	pool := node.Mempool.SetToArray()
 	merge := shared.MakeMergeInfo(balance, pool)
 	encoder.Encode(merge)
+	logBandwithInfo("Send", merge.GetSize())
 }
 
 // HandleBlockRequst : Gossip server handle Block request
@@ -161,6 +164,7 @@ func HandleBlockRequst(node *shared.Node, conn net.Conn, requestMesg string) {
 	encoder := gob.NewEncoder(conn)
 	targetBlock := node.BlockChain[requestHeight-1]
 	encoder.Encode(targetBlock)
+	logBandwithInfo("Send", targetBlock.GetBlockSize())
 }
 
 func requestMergeInfo(node *shared.Node, block *shared.Block) {
@@ -172,6 +176,7 @@ func requestMergeInfo(node *shared.Node, block *shared.Block) {
 	}
 	// Request header
 	fmt.Fprintf(conn, "RequestMergeInfo\n")
+	logBandwithInfo("Send", len("RequestMergeInfo\n"))
 	// Wait for peer response
 	dec := gob.NewDecoder(conn)
 	m := &shared.MergeInfo{}
@@ -179,6 +184,7 @@ func requestMergeInfo(node *shared.Node, block *shared.Block) {
 	if len(m.Balance) == 0 {
 		fmt.Println("Mergeinfo request Fail!!")
 	}
+	logBandwithInfo("Recieve", m.GetSize())
 	// lock node when update
 	mempoolSet := shared.ArrayToSet(m.Mempool)
 	node.RWlock.Lock()
@@ -191,6 +197,7 @@ func requestMergeInfo(node *shared.Node, block *shared.Block) {
 func requestBlock(conn net.Conn, height int) *shared.Block {
 	// Request header
 	fmt.Fprintf(conn, "RequestBlock "+strconv.Itoa(height)+" \n")
+	logBandwithInfo("Send", len("RequestBlock "+strconv.Itoa(height)+" \n"))
 	// Wait for peer response
 	dec := gob.NewDecoder(conn)
 	b := &shared.Block{}
@@ -198,6 +205,7 @@ func requestBlock(conn net.Conn, height int) *shared.Block {
 	if len(b.TransactionList) == 0 {
 		fmt.Println("Block request Fail!!")
 	}
+	logBandwithInfo("Recieve", b.GetBlockSize())
 	return b
 }
 
@@ -243,6 +251,7 @@ func solve(node *shared.Node) {
 	fmt.Println("Sending SOLVE: " + "SOLVE " + puzzle + "\n")
 
 	fmt.Fprintf(*node.ServiceConn, "SOLVE "+puzzle+"\n")
+	logBandwithInfo("Send", len("SOLVE "+puzzle+"\n"))
 }
 
 // PuzzleSolvedHandler : handle TentativeBlock once recieve SOLVED from service
@@ -273,14 +282,15 @@ func PuzzleSolvedHandler(node *shared.Node, rawMsg string) {
 
 // SendBlock : One time send block
 func SendBlock(node *shared.Node, conn net.Conn, block *shared.Block) {
-	// target := node.MembersSet.GetRandom()
-	// targetPeer := strings.Split(target, " ")
-	// ip := targetPeer[0]
-	// port := targetPeer[1]
-	// conn, _ := net.Dial("tcp", ip+":"+port)
 	encoder := gob.NewEncoder(conn)
 	// send gossipMesg to peer
 	gossipMesg := "BLOCK\n"
 	fmt.Fprintf(conn, gossipMesg)
+	logBandwithInfo("Send", len(gossipMesg))
 	encoder.Encode(*block)
+	logBandwithInfo("Send", block.GetBlockSize())
+}
+
+func logBandwithInfo(direction string, byteCount int) {
+	fmt.Println("Bandwith " + direction + " " + time.Now().Format("15:04:05") + " " + strconv.Itoa(byteCount))
 }
