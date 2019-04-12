@@ -6,6 +6,11 @@ Jianfeng Xia(jxia11), Cheng Hu(chenghu3)
 ## Environment
 Go 1.11.4, Python 36
 
+## Design & Evaluation
+For details of algorithms & system design and performance evalution, please refer:
+* `reports/CS425_MP2_CP1_Report.pdf`
+* `reports/CS425_MP2_CP2_Report.pdf`
+
 ## Usage
 * The service should be run at VM number 7, port 8888
 * Log into group VMs and clone repository
@@ -21,9 +26,6 @@ Go 1.11.4, Python 36
     * `cd logs`
     * `python3 propagation.py`
     * `python3 bandwidth.py`  
-    * We have also provided the Jupyter Notebook files:
-      * `logs/bandwidth.ipynb`
-      * `logs/propagation.ipynb`
   	
     Note:
     1. Our plot scripts use `matplotlib` and `numpy`, we suggest to run those scripts on machine has those library.
