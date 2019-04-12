@@ -26,5 +26,5 @@ Go 1.11.4, Python 36
       * `logs/propagation.ipynb`
   	
     Note:
-      1. Our plot scripts use `matplotlib` and `numpy`, we suggest to run those scripts on machine has those library.
-      2. Because the log files are large(we use logs in the case of 100 nodes, 20 mesg/s), please be patient when running scripts.
+    1. Our plot scripts use `matplotlib` and `numpy`, we suggest to run those scripts on machine has those library.
+    2. Because the log files are large(we use logs in the case of 100 nodes, 20 mesg/s), please be patient when running scripts.
