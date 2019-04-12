@@ -19,8 +19,11 @@ Go 1.11.4, Python 36
 * Plotting:
     We have also included scripts to analyze performance and generate plots. To run the scripts: 
     * `cd logs`
-    * `python3 propagation_plot.py`
-    * `python3 bandwidth_plot.py`  
+    * `python3 propagation.py`
+    * `python3 bandwidth.py`  
+    We have also provided the Jupyter Notebook files:
+    `logs/bandwidth.ipynb`
+    `logs/propagation.ipynb`
   	Note:
       1. Our plot scripts use `matplotlib` and `numpy`, we suggest to run those scripts on machine has those library.
       2. Because the log files are large(we use logs in the case of 100 nodes, 20 mesg/s), please be patient when running scripts.
