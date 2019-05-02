@@ -8,8 +8,8 @@ Go 1.11.4, Python 36
 
 ## Design & Evaluation
 For details of algorithms & system design and performance evalution, please refer:
-* `reports/CS425_MP2_CP1_Report.pdf`
-* `reports/CS425_MP2_CP2_Report.pdf`
+* `docs/CS425_MP2_CP1_Report.pdf`
+* `docs/CS425_MP2_CP2_Report.pdf`
 
 ## Usage
 * The service should be run at VM number 7, port 8888
